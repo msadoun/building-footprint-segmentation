@@ -21,11 +21,15 @@ from building_footprint_segmentation.utils.py_network import (
     convert_tensor_to_numpy,
 )
 
-with warnings.catch_warnings():
-    warnings.filterwarnings("ignore")
-    from torch.utils.tensorboard import SummaryWriter
-
 logger = logging.getLogger("segmentation")
+
+
+def _get_summary_writer():
+    with warnings.catch_warnings():
+        warnings.filterwarnings("ignore")
+        from torch.utils.tensorboard import SummaryWriter
+
+    return SummaryWriter
 
 
 class CallbackList(object):
@@ -206,6 +210,7 @@ class TensorBoardCallback(Callback):
 
     def __init__(self, log_dir):
         super().__init__(log_dir)
+        SummaryWriter = _get_summary_writer()
         self.writer = SummaryWriter(make_directory(self.log_dir, "events"))
 
     def plt_scalar(self, y, x, tag):

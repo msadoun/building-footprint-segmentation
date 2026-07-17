@@ -225,7 +225,7 @@ class Trainer:
                 ground_truth=train_data["ground_truth"], prediction=prediction
             )
 
-        return mean_loss.item(), self.metrics.compute_mean(), step, progress_bar
+        return float(mean_loss), self.metrics.compute_mean(), step, progress_bar
 
     @torch.no_grad()
     def state_validate(self) -> Tuple[np.ndarray, dict]:
