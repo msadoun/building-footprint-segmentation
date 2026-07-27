@@ -7,6 +7,7 @@ from pathlib import Path
 
 import cv2
 import torch
+import torch.nn.functional as F
 from albumentations import Compose
 
 from building_footprint_segmentation._env import configure_windows_openmp
@@ -14,6 +15,16 @@ from building_footprint_segmentation.segmentation import init_segmentation
 from building_footprint_segmentation.utils.py_network import convert_tensor_to_numpy, gpu_variable
 
 configure_windows_openmp()
+
+
+def pad_to_multiple(images: torch.Tensor, multiple: int = 32) -> tuple[torch.Tensor, tuple[int, int]]:
+    """Pad H/W to a multiple required by ReFineNet skip connections."""
+    _, _, height, width = images.shape
+    pad_height = (multiple - height % multiple) % multiple
+    pad_width = (multiple - width % multiple) % multiple
+    if pad_height or pad_width:
+        images = F.pad(images, (0, pad_width, 0, pad_height))
+    return images, (height, width)
 
 
 def parse_args() -> argparse.Namespace:
@@ -80,7 +91,9 @@ def main() -> None:
     with torch.no_grad():
         for batch in loader.test_loader:
             images = gpu_variable(batch["images"])
-            predictions = model(images).sigmoid()
+            padded_images, (orig_height, orig_width) = pad_to_multiple(images)
+            predictions = model(padded_images).sigmoid()
+            predictions = predictions[:, :, :orig_height, :orig_width]
             predictions = (predictions >= args.threshold).float()
 
             file_names = batch["file_name"]

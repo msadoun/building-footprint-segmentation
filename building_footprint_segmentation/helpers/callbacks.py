@@ -1,3 +1,4 @@
+import csv
 import datetime
 import logging
 import os
@@ -394,12 +395,140 @@ class BinaryTestCallback(TestDuringTrainingCallback):
             )
 
 
+class MetricsPlotCallback(Callback):
+    """
+    Log per-epoch train/val metrics to CSV and save a YOLO-style results chart.
+    """
+
+    def __init__(self, log_dir):
+        # Keep a stable path (no timestamp) so results.png is easy to find.
+        self.log_dir = log_dir
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.csv_path = os.path.join(self.log_dir, "results.csv")
+        self.plot_path = os.path.join(self.log_dir, "results.png")
+        self.history = []
+        self._fieldnames = None
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        train_metric = logs.get("train_metric") or {}
+        valid_metric = logs.get("valid_metric") or {}
+
+        row = {
+            "epoch": int(epoch),
+            "lr": float(logs.get("lr", 0.0)),
+            "train_loss": float(logs.get("train_loss", 0.0)),
+            "valid_loss": float(logs.get("valid_loss", 0.0)),
+        }
+        for key, value in train_metric.items():
+            row[f"train_{key}"] = float(value)
+        for key, value in valid_metric.items():
+            row[f"valid_{key}"] = float(value)
+
+        self.history.append(row)
+        self._write_csv()
+        # Refresh chart every epoch so a long run still has a usable plot if interrupted.
+        self._plot_results()
+        logger.debug(
+            "Successful on Epoch End {}, Metrics Saved".format(self.__class__.__name__)
+        )
+
+    def on_end(self, logs=None):
+        self._plot_results()
+        one_liner.one_line(
+            tag="Results Chart",
+            tag_data=self.plot_path,
+            tag_color="cyan",
+            to_reset_data=True,
+            to_new_line_data=True,
+        )
+
+    def interruption(self, logs=None):
+        self._plot_results()
+        one_liner.one_line(
+            tag="Results Chart",
+            tag_data=self.plot_path,
+            tag_color="cyan",
+            to_reset_data=True,
+            to_new_line_data=True,
+        )
+
+    def _write_csv(self):
+        if not self.history:
+            return
+        fieldnames = list(self.history[0].keys())
+        self._fieldnames = fieldnames
+        with open(self.csv_path, "w", newline="", encoding="utf-8") as handle:
+            writer = csv.DictWriter(handle, fieldnames=fieldnames)
+            writer.writeheader()
+            writer.writerows(self.history)
+
+    def _plot_results(self):
+        if not self.history:
+            return
+
+        try:
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+        except ImportError as exc:
+            raise ImportError(
+                "matplotlib is required for results charts. "
+                "Install with: pip install matplotlib"
+            ) from exc
+
+        epochs = [row["epoch"] for row in self.history]
+        panels = [
+            ("Loss", [("train_loss", "train"), ("valid_loss", "val")]),
+            ("Accuracy", [("train_accuracy", "train"), ("valid_accuracy", "val")]),
+            ("Precision", [("train_precision", "train"), ("valid_precision", "val")]),
+            ("Recall", [("train_recall", "train"), ("valid_recall", "val")]),
+            ("F1", [("train_f1", "train"), ("valid_f1", "val")]),
+            ("IoU", [("train_iou", "train"), ("valid_iou", "val")]),
+            ("Learning Rate", [("lr", "lr")]),
+        ]
+
+        available_panels = []
+        for title, series in panels:
+            usable = [
+                (key, label)
+                for key, label in series
+                if any(key in row for row in self.history)
+            ]
+            if usable:
+                available_panels.append((title, usable))
+
+        cols = 2
+        rows = (len(available_panels) + cols - 1) // cols
+        fig, axes = plt.subplots(rows, cols, figsize=(12, 3.2 * rows), squeeze=False)
+        fig.suptitle("Training Results", fontsize=14, fontweight="bold")
+
+        for index, (title, series) in enumerate(available_panels):
+            ax = axes[index // cols][index % cols]
+            for key, label in series:
+                values = [row.get(key) for row in self.history]
+                ax.plot(epochs, values, marker="o", markersize=2, linewidth=1.5, label=label)
+            ax.set_title(title)
+            ax.set_xlabel("Epoch")
+            ax.grid(True, alpha=0.3)
+            ax.legend(loc="best", fontsize=8)
+
+        for index in range(len(available_panels), rows * cols):
+            axes[index // cols][index % cols].axis("off")
+
+        fig.tight_layout(rect=[0, 0.02, 1, 0.96])
+        fig.savefig(self.plot_path, dpi=150)
+        plt.close(fig)
+
+
 def load_default_callbacks(log_dir: str):
     return [
         TrainChkCallback(log_dir),
         TimeCallback(log_dir),
         TensorBoardCallback(log_dir),
         TrainStateCallback(log_dir),
+        MetricsPlotCallback(log_dir),
     ]
 
 

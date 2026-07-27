@@ -1,63 +1,56 @@
 # Building Footprint Segmentation
 
-Library to train and run inference for building footprint segmentation on satellite and aerial imagery.
+Train and run inference for building footprint segmentation on satellite and aerial imagery.
+
+This repository is a modernized fork of
+[fuzailpalnak/building-footprint-segmentation](https://github.com/fuzailpalnak/building-footprint-segmentation)
+with CUDA-ready PyTorch support, Windows fixes, and practical CLI scripts for tiling, training, and inference.
 
 ![Python](https://img.shields.io/badge/python-v3.9+-blue.svg)
-![Contributions welcome](https://img.shields.io/badge/contributions-welcome-orange.svg)
 ![Licence](https://img.shields.io/github/license/fuzailpalnak/building-footprint-segmentation)
-[![Downloads](https://static.pepy.tech/badge/building-footprint-segmentation)](https://pepy.tech/project/building-footprint-segmentation)
-
-<a href='https://ko-fi.com/fuzailpalnak' target='_blank'><img height='36' style='border:0px;height:36px;' src='https://az743702.vo.msecnd.net/cdn/kofi1.png?v=0' border='0' alt='Buy Me a Coffee at ko-fi.com' /></a>
 
 ![merge1](https://user-images.githubusercontent.com/24665570/97859410-91fa6100-1d26-11eb-8a47-e41982c748d7.jpg)
 
-## What's New (v0.2.5)
+---
 
-This fork modernizes the original library for current Python/PyTorch stacks and adds local smoke-test scripts.
+## What's New (v0.2.5+)
 
-### Library upgrades
+| Area | Details |
+|------|---------|
+| Python / PyTorch | Python **3.9+**, PyTorch **2.4+** with CUDA |
+| torchvision | Updated to `weights=` API |
+| Windows | OpenMP workaround for PyTorch + OpenCV/MKL |
+| Inference | Padding for non-multiple-of-32 tiles; image-only file filtering |
+| Training | Full training CLI, checkpoints, Ultralytics-style `results.png` charts |
+| Geospatial prep | Chip GeoTIFF → PNG, rasterize shapefile → masks, spatial train/val split |
 
-| Component | Before | Now |
-|-----------|--------|-----|
-| Python | 3.6+ (loose `~=3.3`) | **3.9+** |
-| PyTorch | unpinned / often CPU-only | **2.4+** with CUDA support |
-| torchvision | `pretrained=True` (deprecated) | **`weights=` API** via compatibility helper |
-| NumPy | 1.19.1 | **1.26+** |
-| OpenCV | 4.4.x | **4.9+** |
-| albumentations | 1.3.0 | **1.4+** |
-| PyYAML | 5.3.1 | **6.0+** |
-| scikit-learn | pinned (unused) | **removed** |
-| tensorboard | not listed | **added** (optional callbacks) |
-
-### Code improvements
-
-- Explicit GPU device handling (`get_device()`, `.to(device)` instead of hardcoded `.cuda()`)
-- `DataParallel` only when multiple GPUs are available
-- Safer checkpoint loading (`weights_only=False`, DataParallel key stripping)
-- Lazy TensorBoard import (training works without tensorboard unless `TensorBoardCallback` is used)
-- Windows OpenMP conflict workaround for PyTorch + MKL/OpenCV
-- Bug fixes: metric sigmoid activation, training loss return type, tensor-to-numpy conversion
-
-### New helper scripts
+### Helper scripts
 
 | Script | Purpose |
 |--------|---------|
-| `scripts/check_gpu.py` | Verify CUDA and GPU detection |
-| `scripts/create_dummy_data.py` | Generate a small local test dataset |
-| `scripts/run_inference_test.py` | Run inference with pretrained weights |
-| `scripts/run_training_smoke_test.py` | Run a short training smoke test |
+| `scripts/check_gpu.py` | Verify CUDA / GPU detection |
+| `scripts/create_dummy_data.py` | Tiny dummy train/val/test dataset |
+| `scripts/chip_geotiff_to_png.py` | Chip a large GeoTIFF into RGB PNG tiles |
+| `scripts/rasterize_building_masks.py` | Burn building shapefile into per-tile masks |
+| `scripts/prepare_steyr_dataset.py` | Spatial train/val split from tiles + masks |
+| `scripts/run_inference_test.py` | Run inference and save `*_mask.png` |
+| `scripts/run_training.py` | Fine-tune ReFineNet with metrics charts |
+| `scripts/run_training_smoke_test.py` | Short training smoke test |
 
 ---
 
 ## Installation
 
-### GPU (recommended)
-
-Install the **CUDA build** of PyTorch. A `+cpu` build cannot use the GPU.
-
-**Option A — pip (recommended)**
+### Recommended: conda env + CUDA PyTorch
 
 ```bash
+conda create -n buildingfp python=3.11 -y
+conda activate buildingfp
+
+# Optional GIS tools (GeoTIFF chip / shapefile rasterize)
+conda install -c conda-forge gdal -y
+
+# CUDA PyTorch (do not install the default CPU wheel from PyPI)
 pip uninstall -y torch torchvision torchaudio
 pip install torch torchvision --index-url https://download.pytorch.org/whl/cu124
 pip install -r requirements-gpu.txt
@@ -65,28 +58,9 @@ pip install -e .
 python scripts/check_gpu.py
 ```
 
-**Option B — conda (use Python 3.11)**
+Expected GPU check:
 
-On Windows with Python 3.13, `conda install pytorch ...` may resolve to a CPU build from `defaults`. If the install plan shows `pytorch-*-cpu_*`, cancel and use Option A or create a Python 3.11 environment:
-
-```bash
-conda create -n buildingfp python=3.11 -y
-conda activate buildingfp
-conda install pytorch torchvision pytorch-cuda=12.4 -c pytorch -c nvidia
-pip install -r requirements-gpu.txt
-pip install -e .
-python scripts/check_gpu.py
-```
-
-If conda reports a corrupted package (`InvalidArchiveError`):
-
-```bash
-conda clean --packages -y
-```
-
-Expected `check_gpu.py` output:
-
-```
+```text
 PyTorch version: 2.x.x+cu124
 Selected device: cuda
 GPU 0: NVIDIA ...
@@ -103,140 +77,175 @@ pip install -e .
 
 | File | Contents |
 |------|----------|
-| `requirements.txt` | Core dependencies (no PyTorch) |
+| `requirements.txt` | Core deps (no PyTorch), includes matplotlib |
 | `requirements-cpu.txt` | Core + CPU PyTorch |
-| `requirements-gpu.txt` | Core only — install CUDA PyTorch separately (see above) |
+| `requirements-gpu.txt` | Core only — install CUDA PyTorch separately |
 
 ---
 
 ## Data Format
 
-The library expects **aerial or satellite RGB imagery**. The pretrained `refine.pth` weights were trained on the [INRIA Aerial Image Labeling Dataset](https://project.inria.fr/aerialimagelabeling/).
+The library expects **aerial / satellite RGB imagery**.
+Pretrained `refine.pth` was trained on the
+[INRIA Aerial Image Labeling Dataset](https://project.inria.fr/aerialimagelabeling/).
 
-### Folder structure
+### Inference only
 
-#### Inference only
-
-Labels are **not** required.
-
-```
+```text
 dataset_root/
   test/
     images/
       tile_001.png
-      tile_002.jpg
+      tile_002.png
 ```
 
-#### Training
+Labels are **not** required. Only image files are loaded (`.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.bmp`, `.webp`). Sidecars such as `*.aux.xml` are ignored.
 
-Train and validation require **paired** images and masks. Test images are optional.
+### Training
 
-```
+```text
 dataset_root/
   train/
     images/
-      sample_001.png
-      sample_002.png
+      tile_001.png
     labels/
-      sample_001.png
-      sample_002.png
+      tile_001.png
   val/
     images/
-      sample_101.png
+      tile_101.png
     labels/
-      sample_101.png
-  test/                  # optional
+      tile_101.png
+  test/                 # optional
     images/
-      sample_201.png
+      tile_201.png
 ```
 
 **Pairing rules**
 
-- Image/label pairs are matched by **sorted filename** — names must match exactly in `images/` and `labels/`
-- Train and val splits must have the same number of files in `images/` and `labels/`
-- Image and mask must have the **same height and width** (pixel-aligned)
+- Image / label pairs must share the **exact same filename**
+- Image and mask must have the **same height and width**
+- Prefer a **fixed tile size** within a batch (e.g. all `512×512`) so `batch_size > 1` works
 
-### Data types
+### Image / mask types
 
-#### Input images (`images/`)
+| Property | Images | Labels |
+|----------|--------|--------|
+| Content | RGB aerial / satellite | Binary building mask |
+| Formats | PNG / JPG / OpenCV-readable TIF | PNG recommended |
+| Building pixels | — | White (`255`) |
+| Background | — | Black (`0`) |
+| Dtype | `uint8` | `uint8` |
+| Default norm | `divide_by_255` → `[0, 1]` | `binary_label` → `0.0` / `1.0` |
 
-| Property | Inference | Training |
-|----------|-----------|----------|
-| Content | Aerial / satellite RGB | Aerial / satellite RGB |
-| File formats | `.png`, `.jpg`, `.jpeg`, `.tif` (OpenCV-readable) | Same |
-| Channels | 3 (RGB) | 3 (RGB) |
-| Dtype | `uint8` (0–255) | `uint8` (0–255) |
-| Size | Any H×W (fully convolutional model) | Same H×W within a batch |
-| Labels required | No | Yes (train + val) |
+### Model output
 
-**Normalization used by default:** `divide_by_255` → float values in `[0, 1]`
-
-**Internal tensor shape:** `[batch, 3, height, width]` (`float32`)
-
-#### Masks / labels (`labels/`) — training only
-
-| Property | Value |
-|----------|-------|
-| Type | Binary building mask |
-| Format | RGB image (PNG recommended); converted to grayscale internally |
-| Building pixels | White (`255`) |
-| Background pixels | Black (`0`) |
-| Size | Must match the paired image (H×W) |
-
-**Normalization used by default:** `binary_label` → single channel, values `0.0` or `1.0`
-
-**Internal tensor shape:** `[batch, 1, height, width]` (`float32`)
-
-#### Model output (inference)
-
-| Property | Value |
-|----------|-------|
-| Raw output | Logits, shape `[batch, 1, H, W]` |
-| After sigmoid + threshold | Binary mask (default threshold: `0.20`) |
-| Saved format | Single-channel PNG (`0` = background, `255` = building) |
-
-### Normalization options
-
-Configured when creating the loader:
-
-| Images | Labels | Use case |
-|--------|--------|----------|
-| `divide_by_255` | `binary_label` | **Default** — used in examples and scripts |
-| `divide_255_image_net` | `binary_label` | ImageNet mean/std normalization |
-| `min_max_image_net` | `binary_label` | Per-image min-max + ImageNet stats |
-
-### Batch size note
-
-All images in a batch must share the same dimensions. If your dataset has mixed sizes, use `batch_size=1` or tile images to a fixed patch size first (see [Split the images in smaller sample](#split-the-images-in-smaller-sample)).
+| Stage | Value |
+|-------|-------|
+| Raw | Logits `[B, 1, H, W]` |
+| Post-process | Sigmoid + threshold (default `0.20`) |
+| Saved | Single-channel PNG (`0` background, `255` building) |
 
 ---
 
-## Inference Guide
+## End-to-end workflow (custom GeoTIFF + shapefile)
 
-### Quick start (CLI)
+Example paths below match a Steyr-style dataset. Adjust paths as needed.
 
-1. Place images in `test/images/`:
+### 1. Chip the GeoTIFF into PNG tiles
 
-```
-data/my_inference/
-  test/
-    images/
-      aerial_01.png
+```bash
+python scripts/chip_geotiff_to_png.py --tile-size 512
 ```
 
-2. Run inference with pretrained weights:
+Writes to `data/steyr_512/test/images/` (tile size is part of the folder name).
+
+```bash
+python scripts/chip_geotiff_to_png.py --tile-size 1024
+# → data/steyr_1024/test/images/
+```
+
+### 2. Rasterize building footprints into masks
+
+```bash
+python scripts/rasterize_building_masks.py \
+  --geotiff "D:/path/to/area.tif" \
+  --shapefile "D:/path/to/buildings.shp" \
+  --images data/steyr_512/test/images \
+  --labels data/steyr_512/test/labels
+```
+
+Creates one label PNG per tile, georeferenced from the source GeoTIFF and tile offsets in names like `tile_1024_2048.png`.
+
+### 3. Build train / validation split
+
+Uses a **spatial** hold-out (eastern tile columns → val) to reduce leakage from neighboring tiles:
+
+```bash
+python scripts/prepare_steyr_dataset.py \
+  --images data/steyr_512/test/images \
+  --labels data/steyr_512/test/labels \
+  --output data/steyr_train \
+  --val-fraction 0.2 \
+  --only-size 512
+```
+
+Produces:
+
+```text
+data/steyr_train/
+  train/images + train/labels
+  val/images   + val/labels
+```
+
+### 4. Train (fine-tune)
+
+```bash
+python scripts/run_training.py \
+  --data data/steyr_train \
+  --weights refine.pth \
+  --output outputs/steyr_training_1000 \
+  --epochs 1000 \
+  --batch-size 8 \
+  --lr 0.0001
+```
+
+Default is **1000 epochs**. Training writes:
+
+| Output | Description |
+|--------|-------------|
+| `results.png` | YOLO-style chart: loss, accuracy, precision, recall, F1, IoU, LR |
+| `results.csv` | Same metrics, one row per epoch |
+| `<timestamp>/state/best.pt` | Best validation-loss checkpoint |
+| `<timestamp>/chk_pth/chk_pth.pt` | Latest model weights |
+
+The chart is refreshed every epoch (also kept if you interrupt with `Ctrl+C`).
+
+### 5. Inference with trained weights
 
 ```bash
 python scripts/run_inference_test.py \
-  --data data/my_inference \
+  --data data/steyr_512 \
+  --weights outputs/steyr_training_1000/<timestamp>/chk_pth/chk_pth.pt \
+  --output outputs/steyr_preds \
+  --threshold 0.20
+```
+
+Non-multiple-of-32 edge tiles are padded automatically during inference.
+
+---
+
+## Inference (pretrained only)
+
+```bash
+python scripts/create_dummy_data.py
+python scripts/run_inference_test.py \
+  --data data/dummy \
   --weights refine.pth \
   --output outputs/inference_test \
   --threshold 0.20
 ```
 
-3. Masks are saved to `outputs/inference_test/` as `*_mask.png`.
-
-### Quick start (Python)
+### Python API
 
 ```python
 import torch
@@ -263,34 +272,12 @@ with torch.no_grad():
         mask = (predictions >= 0.20).float()
 ```
 
-### Dummy data smoke test
-
-```bash
-python scripts/create_dummy_data.py
-python scripts/check_gpu.py
-python scripts/run_inference_test.py
-```
-
-### Augmented inference
-
-For test-time augmentation and result aggregation, see the upstream notebook:
-[PredictionWithAugmentations.ipynb](https://github.com/fuzailpalnak/building-footprint-segmentation/blob/main/examples/PredictionWithAugmentations.ipynb)
-
 ---
 
-## Training Guide
-
-### Quick start (CLI smoke test)
-
-1. Create or prepare a dataset (see [Data Format](#data-format)):
+## Training (smoke test)
 
 ```bash
 python scripts/create_dummy_data.py --output data/dummy
-```
-
-2. Run a short training test:
-
-```bash
 python scripts/run_training_smoke_test.py \
   --data data/dummy \
   --weights refine.pth \
@@ -298,162 +285,80 @@ python scripts/run_training_smoke_test.py \
   --batch-size 2
 ```
 
-### Quick start (Python)
+### Callbacks
 
-```python
-import albumentations as A
-from building_footprint_segmentation.segmentation import init_segmentation
-from building_footprint_segmentation.helpers.callbacks import CallbackList, TimeCallback
-from building_footprint_segmentation.trainer import Trainer
+| Callback | Role |
+|----------|------|
+| `MetricsPlotCallback` | `results.csv` + `results.png` |
+| `TrainStateCallback` | `best.pt` / `default.pt` training state |
+| `TrainChkCallback` | Latest `chk_pth.pt` weights |
+| `TensorBoardCallback` | TensorBoard event logs |
+| `TimeCallback` | Total run time |
 
-segmentation = init_segmentation("binary")
-
-augmenters = A.Compose([
-    A.HorizontalFlip(p=0.5),
-    A.RandomBrightnessContrast(p=0.2),
-])
-
-model = segmentation.load_model("ReFineNet", transfer_weights="refine.pth")
-criterion = segmentation.load_criterion(name="BinaryCrossEntropy")
-loader = segmentation.load_loader(
-    root_folder="data/my_dataset",
-    image_normalization="divide_by_255",
-    label_normalization="binary_label",
-    augmenters=augmenters,
-    batch_size=4,
-)
-metrics = segmentation.load_metrics(
-    data_metrics=["accuracy", "precision", "f1", "recall", "iou"]
-)
-optimizer = segmentation.load_optimizer(model, name="Adam", lr=1e-4)
-callbacks = CallbackList([TimeCallback(log_dir="outputs/training")])
-
-trainer = Trainer(
-    model=model,
-    criterion=criterion,
-    optimizer=optimizer,
-    loader=loader,
-    metrics=metrics,
-    callbacks=callbacks,
-    scheduler=None,
-)
-
-trainer.train(start_epoch=0, end_epoch=10)
-```
-
-### Training with notebooks
-
-- [Train With Config](https://github.com/fuzailpalnak/building-footprint-segmentation/blob/main/examples/Run%20with%20config.ipynb) — YAML config; use [config template](https://codebeautify.org/yaml-validator/cbc60637)
-- [Train With Arguments](https://github.com/fuzailpalnak/building-footprint-segmentation/blob/main/examples/Run%20with%20defined%20arguments.ipynb)
-- [TestCallBack](https://github.com/fuzailpalnak/building-footprint-segmentation/blob/main/examples/TestCallBack.ipynb) — visualize predictions during training
-
-### Supported datasets
-
-- [Massachusetts Buildings Dataset](https://www.cs.toronto.edu/~vmnih/data/)
-- [Inria Aerial Image Labeling Dataset](https://project.inria.fr/aerialimagelabeling/)
-
----
-
-## Visualize Training
-
-### Test images at end of every epoch
-
-Follow [TestCallBack.ipynb](https://github.com/fuzailpalnak/building-footprint-segmentation/blob/main/examples/TestCallBack.ipynb).
-
-### TensorBoard
-
-```python
-from building_footprint_segmentation.helpers.callbacks import CallbackList, TensorBoardCallback
-
-where_to_log_the_callback = r"path_to_log_callback"
-callbacks = CallbackList()
-callbacks.append(TensorBoardCallback(where_to_log_the_callback))
-```
+TensorBoard:
 
 ```bash
-tensorboard --logdir="path_to_log_callback"
+tensorboard --logdir="outputs/steyr_training_1000"
 ```
-
-Requires `pip install tensorboard`.
-
----
-
-## Defining Custom Callback
-
-```python
-from building_footprint_segmentation.helpers.callbacks import CallbackList, Callback
-
-class CustomCallback(Callback):
-    def __init__(self, log_dir):
-        super().__init__(log_dir)
-
-where_to_log_the_callback = r"path_to_log_callback"
-callbacks = CallbackList()
-callbacks.append(CustomCallback(where_to_log_the_callback))
-```
-
----
-
-## Split the images in smaller sample
-
-```python
-import glob
-import os
-
-from image_fragment.fragment import ImageFragment
-
-# FOR .jpg, .png, .jpeg
-from imageio import imread, imsave
-
-# FOR .tiff
-from tifffile import imread, imsave
-
-ORIGINAL_DIM_OF_IMAGE = (1500, 1500, 3)
-CROP_TO_DIM = (384, 384, 3)
-
-image_fragment = ImageFragment.image_fragment_3d(
-    fragment_size=(384, 384, 3), org_size=ORIGINAL_DIM_OF_IMAGE
-)
-
-IMAGE_DIR = r"pth\to\input\dir"
-SAVE_DIR = r"pth\to\save\dir"
-
-for file in glob.glob(
-    os.path.join(IMAGE_DIR, "*")
-):
-    image = imread(file)
-    for i, fragment in enumerate(image_fragment):
-        fragmented_image = fragment.get_fragment_data(image)
-
-        imsave(
-            os.path.join(
-                SAVE_DIR,
-                f"{i}_{os.path.basename(file)}",
-            ),
-            fragmented_image,
-        )
-```
-
----
-
-## Segmentation for building footprint
-
-- [x] binary
-- [ ] building with boundary (multi class segmentation)
 
 ---
 
 ## Weight Files
 
-- [RefineNet trained on INRIA](https://github.com/fuzailpalnak/building-footprint-segmentation/releases/download/alpha/refine.zip) — also available locally as `refine.pth`
-- [DlinkNet trained on Massachusetts Buildings Dataset](https://github.com/fuzailpalnak/building-footprint-segmentation/releases/download/alpha/DlinkNet.zip)
+| Weights | Source |
+|---------|--------|
+| `refine.pth` (local) | ReFineNet / INRIA — place in project root |
+| [RefineNet (INRIA)](https://github.com/fuzailpalnak/building-footprint-segmentation/releases/download/alpha/refine.zip) | Upstream release zip |
+| [DLinkNet (Massachusetts)](https://github.com/fuzailpalnak/building-footprint-segmentation/releases/download/alpha/DlinkNet.zip) | Upstream release zip |
+
+Download example:
+
+```bash
+# unzip refine.zip into the project root as refine.pth
+```
 
 ---
 
-## Geospatial utilities
+## Models
 
-Refer to [gtkit](https://github.com/fuzailpalnak/gtkit) for common GeoTIFF workflows:
+Binary segmentation models available via `load_model(...)`:
 
-- [Generate bitmap from shape file](https://github.com/fuzailpalnak/gtkit/blob/main/tutorials/shpToBitmap.ipynb)
-- [Generate shape geometry from geo reference bitmap](https://github.com/fuzailpalnak/gtkit/blob/main/tutorials/bitmapToShp.ipynb)
-- [Save Multi Band Imagery](https://github.com/fuzailpalnak/gtkit)
+- `ReFineNet` (default / pretrained path)
+- `ReFineNetLite`
+- `DLinkNet34`
+- `AlBuNet`
+- `MFRN`
+
+---
+
+## Notes & limitations
+
+- **Domain gap**: pretrained INRIA weights often look poor on new orthophotos until fine-tuned.
+- **JPEG2000 (`.jp2`)**: GDAL may need `libgdal-jp2openjpeg`. Prefer chipping from GeoTIFF when JP2 support is missing.
+- **GeoTIFF**: OpenCV inference does not preserve CRS. Keep the source georeference / world files if you need to reproject masks.
+- **Batch size**: mixed tile sizes → use `batch_size=1` or filter to a fixed size (`--only-size` in dataset prep).
+- **Large rasters**: do not feed a multi-GB mosaic to the model whole — chip first.
+
+---
+
+## Segmentation scope
+
+- [x] Binary building footprint
+- [ ] Building with boundary (multi-class)
+
+---
+
+## Notebooks / upstream extras
+
+- [Train with config](https://github.com/fuzailpalnak/building-footprint-segmentation/blob/main/examples/Run%20with%20config.ipynb)
+- [Train with arguments](https://github.com/fuzailpalnak/building-footprint-segmentation/blob/main/examples/Run%20with%20defined%20arguments.ipynb)
+- [Test callback](https://github.com/fuzailpalnak/building-footprint-segmentation/blob/main/examples/TestCallBack.ipynb)
+- [Prediction with augmentations](https://github.com/fuzailpalnak/building-footprint-segmentation/blob/main/examples/PredictionWithAugmentations.ipynb)
+
+For additional GeoTIFF utilities, see [gtkit](https://github.com/fuzailpalnak/gtkit).
+
+---
+
+## License
+
+Apache-2.0 (see `LICENSE`).
