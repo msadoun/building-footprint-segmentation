@@ -142,11 +142,7 @@ Prefer a **fixed tile size** (e.g. all `512×512`) so `batch_size > 1` works.
 
 ```bash
 python scripts/create_dummy_data.py
-python scripts/run_inference_test.py \
-  --data data/dummy \
-  --weights refine.pth \
-  --output outputs/inference_test \
-  --threshold 0.20
+python scripts/run_inference_test.py --data data/dummy --weights refine.pth --output outputs/inference_test --threshold 0.20
 ```
 
 Masks are written as `outputs/inference_test/*_mask.png`  
@@ -158,21 +154,13 @@ Masks are written as `outputs/inference_test/*_mask.png`
 2. Run:
 
 ```bash
-python scripts/run_inference_test.py \
-  --data data/my_area \
-  --weights refine.pth \
-  --output outputs/my_preds \
-  --threshold 0.20
+python scripts/run_inference_test.py --data data/my_area --weights refine.pth --output outputs/my_preds --threshold 0.20
 ```
 
 With a fine-tuned checkpoint:
 
 ```bash
-python scripts/run_inference_test.py \
-  --data data/steyr_512 \
-  --weights outputs/steyr_training_300/<timestamp>/chk_pth/chk_pth.pt \
-  --output outputs/steyr_preds \
-  --threshold 0.20
+python scripts/run_inference_test.py --data data/steyr_512 --weights outputs/steyr_training_300/<timestamp>/chk_pth/chk_pth.pt --output outputs/steyr_preds --threshold 0.20
 ```
 
 Edge tiles that are not multiples of 32 are **padded automatically**, then cropped back.
@@ -224,11 +212,7 @@ Use a separate folder per tile size (`steyr_512`, `steyr_1024`, …).
 ### Step B — Rasterize building footprints
 
 ```bash
-python scripts/rasterize_building_masks.py \
-  --geotiff "D:/path/to/area.tif" \
-  --shapefile "D:/path/to/buildings.shp" \
-  --images data/steyr_512/test/images \
-  --labels data/steyr_512/test/labels
+python scripts/rasterize_building_masks.py --geotiff "D:/path/to/area.tif" --shapefile "D:/path/to/buildings.shp" --images data/steyr_512/test/images --labels data/steyr_512/test/labels
 ```
 
 ### Step C — Train / validation split
@@ -236,24 +220,13 @@ python scripts/rasterize_building_masks.py \
 Spatial hold-out (eastern tile columns → val) to reduce leakage:
 
 ```bash
-python scripts/prepare_steyr_dataset.py \
-  --images data/steyr_512/test/images \
-  --labels data/steyr_512/test/labels \
-  --output data/steyr_train \
-  --val-fraction 0.2 \
-  --only-size 512
+python scripts/prepare_steyr_dataset.py --images data/steyr_512/test/images --labels data/steyr_512/test/labels --output data/steyr_train --val-fraction 0.2 --only-size 512
 ```
 
 ### Step D — Fine-tune
 
 ```bash
-python scripts/run_training.py \
-  --data data/steyr_train \
-  --weights refine.pth \
-  --output outputs/steyr_training_300 \
-  --epochs 300 \
-  --batch-size 8 \
-  --lr 0.0001
+python scripts/run_training.py --data data/steyr_train --weights refine.pth --output outputs/steyr_training_300 --epochs 300 --batch-size 8 --lr 0.0001
 ```
 
 Useful flags:
