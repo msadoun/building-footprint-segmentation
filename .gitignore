@@ -122,6 +122,8 @@ refine.pth
 # Training metric exports (also under outputs/, listed explicitly)
 results.csv
 results.png
+results_regularized.csv
+results_regularized.png
 predictions.png
 
 # GDAL / GIS sidecars generated next to rasters

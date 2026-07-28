@@ -35,6 +35,7 @@ with CUDA-ready PyTorch support, Windows fixes, and practical CLI scripts for ti
 | `scripts/prepare_steyr_dataset.py` | Spatial train/val split from tiles + masks |
 | `scripts/run_inference_test.py` | Run inference and save `*_mask.png` |
 | `scripts/run_training.py` | Fine-tune ReFineNet with metrics charts |
+| `scripts/regularize_masks.py` | Post-process raw masks into sharp polygons |
 | `scripts/run_training_smoke_test.py` | Short training smoke test |
 
 ---
@@ -213,9 +214,11 @@ Default is **1000 epochs**. Training writes:
 
 | Output | Description |
 |--------|-------------|
-| `results.png` | YOLO-style chart: loss, accuracy, precision, recall, F1, IoU, LR |
-| `results.csv` | Same metrics, one row per epoch |
-| `predictions.png` | Visual samples: image / ground truth / prediction (5 fixed val tiles) |
+| `results.png` | Raw model metrics chart: loss, accuracy, precision, recall, F1, IoU, LR |
+| `results.csv` | Raw model metrics, one row per epoch |
+| `results_regularized.png` | Val metrics **after** mask regularization (sharp polygons) |
+| `results_regularized.csv` | Regularized metrics, one row per epoch |
+| `predictions.png` | Samples: image / GT / raw prediction / **regularized** prediction |
 | `<timestamp>/state/best.pt` | Best validation-loss checkpoint |
 | `<timestamp>/chk_pth/chk_pth.pt` | Latest model weights |
 
@@ -291,7 +294,8 @@ python scripts/run_training_smoke_test.py \
 | Callback | Role |
 |----------|------|
 | `MetricsPlotCallback` | `results.csv` + `results.png` |
-| `PredictionSampleCallback` | `predictions.png` (image / GT / prediction grid) |
+| `RegularizedMetricsCallback` | `results_regularized.csv` + `results_regularized.png` |
+| `PredictionSampleCallback` | `predictions.png` (image / GT / prediction / regularized) |
 | `TrainStateCallback` | `best.pt` / `default.pt` training state |
 | `TrainChkCallback` | Latest `chk_pth.pt` weights |
 | `TensorBoardCallback` | TensorBoard event logs |
