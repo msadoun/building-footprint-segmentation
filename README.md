@@ -300,14 +300,14 @@ Charts refresh **every epoch** (and survive `Ctrl+C`).
 
 Raw model curves for loss, accuracy, precision, recall, F1, IoU, and learning rate:
 
-![Training results over 300 epochs](docs/assets/training_results.png)
+![Training results over 300 epochs](./docs/assets/training_results.png)
 
 ### Example: validation sample grid (epoch 299)
 
 Top → bottom: **RGB image**, **ground truth**, **model prediction**  
 (five fixed validation tiles so you can track progress across epochs):
 
-![Validation predictions vs ground truth](docs/assets/training_predictions.png)
+![Validation predictions vs ground truth](./docs/assets/training_predictions.png)
 
 ### How to read these charts
 
