@@ -112,6 +112,9 @@ class Trainer:
                 epoch_logs = handle_dictionary(
                     epoch_logs, "test_loader", self.loader.test_loader
                 )
+                epoch_logs = handle_dictionary(
+                    epoch_logs, "val_loader", self.loader.val_loader
+                )
 
                 self.callbacks.on_epoch_end(
                     ongoing_epoch,

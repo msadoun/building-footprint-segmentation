@@ -215,6 +215,7 @@ Default is **1000 epochs**. Training writes:
 |--------|-------------|
 | `results.png` | YOLO-style chart: loss, accuracy, precision, recall, F1, IoU, LR |
 | `results.csv` | Same metrics, one row per epoch |
+| `predictions.png` | Visual samples: image / ground truth / prediction (5 fixed val tiles) |
 | `<timestamp>/state/best.pt` | Best validation-loss checkpoint |
 | `<timestamp>/chk_pth/chk_pth.pt` | Latest model weights |
 
@@ -290,6 +291,7 @@ python scripts/run_training_smoke_test.py \
 | Callback | Role |
 |----------|------|
 | `MetricsPlotCallback` | `results.csv` + `results.png` |
+| `PredictionSampleCallback` | `predictions.png` (image / GT / prediction grid) |
 | `TrainStateCallback` | `best.pt` / `default.pt` training state |
 | `TrainChkCallback` | Latest `chk_pth.pt` weights |
 | `TensorBoardCallback` | TensorBoard event logs |

@@ -11,6 +11,7 @@ from building_footprint_segmentation._env import configure_windows_openmp
 from building_footprint_segmentation.helpers.callbacks import (
     CallbackList,
     MetricsPlotCallback,
+    PredictionSampleCallback,
     TimeCallback,
     TrainChkCallback,
     TrainStateCallback,
@@ -56,6 +57,18 @@ def parse_args() -> argparse.Namespace:
         type=float,
         default=1e-4,
         help="Adam learning rate (default: 1e-4)",
+    )
+    parser.add_argument(
+        "--sample-count",
+        type=int,
+        default=5,
+        help="Number of validation samples in predictions.png (default: 5)",
+    )
+    parser.add_argument(
+        "--threshold",
+        type=float,
+        default=0.20,
+        help="Mask threshold for prediction samples (default: 0.20)",
     )
     return parser.parse_args()
 
@@ -115,6 +128,11 @@ def main() -> None:
             TrainStateCallback(log_dir=str(output_dir)),
             TrainChkCallback(log_dir=str(output_dir)),
             MetricsPlotCallback(log_dir=str(output_dir)),
+            PredictionSampleCallback(
+                log_dir=str(output_dir),
+                num_samples=args.sample_count,
+                threshold=args.threshold,
+            ),
         ]
     )
 
@@ -139,6 +157,7 @@ def main() -> None:
     print("Training complete.")
     print(f"Results chart: {output_dir / 'results.png'}")
     print(f"Results CSV: {output_dir / 'results.csv'}")
+    print(f"Prediction samples: {output_dir / 'predictions.png'}")
     print(f"Best checkpoint: {output_dir / 'state' / 'best.pt'}")
     print(f"Latest weights: {output_dir / 'chk_pth' / 'chk_pth.pt'}")
 

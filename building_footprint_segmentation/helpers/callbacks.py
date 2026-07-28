@@ -522,6 +522,153 @@ class MetricsPlotCallback(Callback):
         plt.close(fig)
 
 
+class PredictionSampleCallback(Callback):
+    """
+    Save a visual GT vs prediction grid for a fixed set of random validation tiles.
+    Updated every epoch so the file always reflects the latest model.
+    """
+
+    def __init__(
+        self,
+        log_dir,
+        num_samples: int = 5,
+        threshold: float = 0.20,
+        seed: int = 42,
+    ):
+        self.log_dir = log_dir
+        os.makedirs(self.log_dir, exist_ok=True)
+        self.num_samples = num_samples
+        self.threshold = threshold
+        self.seed = seed
+        self.sample_indices = None
+        self.plot_path = os.path.join(self.log_dir, "predictions.png")
+
+    def on_epoch_end(self, epoch, logs=None):
+        logs = logs or {}
+        model = logs.get("model")
+        val_loader = logs.get("val_loader")
+        if model is None or val_loader is None:
+            logger.debug(
+                "Skipped {} — model or val_loader missing from logs".format(
+                    self.__class__.__name__
+                )
+            )
+            return
+        self._save_prediction_grid(model, val_loader, epoch)
+        logger.debug(
+            "Successful on Epoch End {}, Prediction Grid Saved".format(
+                self.__class__.__name__
+            )
+        )
+
+    def interruption(self, logs=None):
+        logs = logs or {}
+        model = logs.get("model")
+        val_loader = logs.get("val_loader")
+        if model is None or val_loader is None:
+            return
+        epoch = logs.get("state", {}).get("start_epoch", "?")
+        self._save_prediction_grid(model, val_loader, epoch)
+
+    @staticmethod
+    def _pad_to_multiple(images, multiple: int = 32):
+        import torch.nn.functional as F
+
+        _, _, height, width = images.shape
+        pad_height = (multiple - height % multiple) % multiple
+        pad_width = (multiple - width % multiple) % multiple
+        if pad_height or pad_width:
+            images = F.pad(images, (0, pad_width, 0, pad_height))
+        return images, (height, width)
+
+    def _ensure_indices(self, dataset_size: int):
+        if self.sample_indices is not None:
+            return
+        count = min(self.num_samples, dataset_size)
+        rng = __import__("random").Random(self.seed)
+        self.sample_indices = rng.sample(range(dataset_size), count)
+
+    def _save_prediction_grid(self, model, val_loader, epoch):
+        try:
+            import matplotlib
+
+            matplotlib.use("Agg")
+            import matplotlib.pyplot as plt
+            import numpy as np
+        except ImportError as exc:
+            raise ImportError(
+                "matplotlib is required for prediction grids. "
+                "Install with: pip install matplotlib"
+            ) from exc
+
+        dataset = val_loader.dataset
+        if len(dataset) == 0:
+            return
+
+        self._ensure_indices(len(dataset))
+        model.eval()
+
+        images = []
+        grounds = []
+        preds = []
+
+        with torch.no_grad():
+            for index in self.sample_indices:
+                sample = dataset[index]
+                image = sample["images"].unsqueeze(0)
+                ground = sample["ground_truth"]
+
+                image = gpu_variable(image)
+                padded, (orig_h, orig_w) = self._pad_to_multiple(image)
+                prediction = model(padded).sigmoid()
+                prediction = prediction[:, :, :orig_h, :orig_w]
+                prediction = (prediction >= self.threshold).float()
+
+                image_np = convert_tensor_to_numpy(image[0])
+                if image_np.ndim == 3 and image_np.shape[0] in (1, 3):
+                    image_np = np.moveaxis(image_np, 0, -1)
+                image_np = np.clip(image_np, 0.0, 1.0)
+
+                ground_np = convert_tensor_to_numpy(ground)
+                if ground_np.ndim == 3:
+                    ground_np = ground_np.reshape(ground_np.shape[-2], ground_np.shape[-1])
+
+                pred_np = convert_tensor_to_numpy(prediction[0])
+                if pred_np.ndim == 3:
+                    pred_np = pred_np.reshape(pred_np.shape[-2], pred_np.shape[-1])
+
+                images.append(image_np)
+                grounds.append(ground_np)
+                preds.append(pred_np)
+
+        cols = len(self.sample_indices)
+        fig, axes = plt.subplots(3, cols, figsize=(3.0 * cols, 9.0), squeeze=False)
+        fig.suptitle(
+            f"Validation Samples — Epoch {epoch} (top: image, middle: GT, bottom: prediction)",
+            fontsize=12,
+            fontweight="bold",
+        )
+
+        for col, (image_np, ground_np, pred_np) in enumerate(zip(images, grounds, preds)):
+            axes[0][col].imshow(image_np)
+            axes[0][col].set_title(f"#{self.sample_indices[col]}", fontsize=9)
+            axes[0][col].axis("off")
+
+            axes[1][col].imshow(ground_np, cmap="gray", vmin=0, vmax=1)
+            if col == 0:
+                axes[1][col].set_ylabel("Ground Truth", fontsize=10)
+            axes[1][col].axis("off")
+
+            axes[2][col].imshow(pred_np, cmap="gray", vmin=0, vmax=1)
+            if col == 0:
+                axes[2][col].set_ylabel("Prediction", fontsize=10)
+            axes[2][col].axis("off")
+
+        fig.tight_layout(rect=[0, 0.02, 1, 0.95])
+        fig.savefig(self.plot_path, dpi=150)
+        plt.close(fig)
+
+
 def load_default_callbacks(log_dir: str):
     return [
         TrainChkCallback(log_dir),
@@ -529,6 +676,7 @@ def load_default_callbacks(log_dir: str):
         TensorBoardCallback(log_dir),
         TrainStateCallback(log_dir),
         MetricsPlotCallback(log_dir),
+        PredictionSampleCallback(log_dir),
     ]
 
 
