@@ -19,9 +19,10 @@ with CUDA-ready PyTorch, Windows fixes, geospatial prep scripts, and training ch
 2. [Data format](#data-format)
 3. [Inference guide](#inference-guide)
 4. [Training guide](#training-guide)
-5. [Helper scripts](#helper-scripts)
-6. [Weights & models](#weights--models)
-7. [Notes & limitations](#notes--limitations)
+5. [Hyperparameter search](#hyperparameter-search)
+6. [Helper scripts](#helper-scripts)
+7. [Weights & models](#weights--models)
+8. [Notes & limitations](#notes--limitations)
 
 ---
 
@@ -284,6 +285,62 @@ tensorboard --logdir="outputs/steyr_training_300"
 
 ---
 
+## Hyperparameter search
+
+Use this after you have a prepared train/val dataset. The search trains **every mix** of the ranges you provide for a fixed number of epochs per mix, then reports the **best hyperparameters**.
+
+### Run a search
+
+Example (512 or 1024 dataset — change `--data` / `--batch-sizes` as needed):
+
+```bash
+python scripts/run_hyperparameter_search.py --data data/steyr_train_1024 --weights refine.pth --output outputs/hyperparam_search_1024 --epochs-per-trial 20 --lrs 1e-5,5e-5,1e-4 --batch-sizes 2,4 --weight-decays 0.0,1e-4 --criteria BinaryCrossEntropy,Dice --metric valid_iou
+```
+
+Defaults if you omit ranges:
+
+| Flag | Default |
+|------|---------|
+| `--lrs` | `1e-5,5e-5,1e-4` |
+| `--batch-sizes` | `2,4,8` |
+| `--weight-decays` | `0.0,1e-4` |
+| `--criteria` | `BinaryCrossEntropy,Dice` |
+| `--thresholds` | `0.20` |
+| `--epochs-per-trial` | `20` |
+| `--metric` | `valid_iou` (maximized) |
+
+Tip: cap the grid with `--max-trials 6` for a quick smoke search.
+
+### What each trial writes
+
+```text
+outputs/hyperparam_search_1024/
+  trial_000_.../
+    hyperparameters.json
+    results.csv
+    results.png
+    predictions.png
+    <timestamp>/chk_pth/chk_pth.pt
+  search_summary.csv
+  best_hyperparameters.json          ← main answer
+  comparison.png                   ← bar chart of best metric per trial
+  curves_comparison.png            ← overlaid val curves
+  best_results.png
+  best_predictions.png
+```
+
+### After the search — train longer with the winner
+
+Open `best_hyperparameters.json`, then run a full training job, for example:
+
+```bash
+python scripts/run_training.py --data data/steyr_train_1024 --weights refine.pth --output outputs/steyr_training_1024_best --epochs 300 --batch-size 2 --lr 0.0001
+```
+
+(Replace `--batch-size` / `--lr` with the values from `best_hyperparameters.json`.)
+
+---
+
 ## Helper scripts
 
 | Script | Purpose |
@@ -295,6 +352,7 @@ tensorboard --logdir="outputs/steyr_training_300"
 | `scripts/prepare_steyr_dataset.py` | Spatial train/val split |
 | `scripts/run_inference_test.py` | Inference → `*_mask.png` |
 | `scripts/run_training.py` | Fine-tune + charts |
+| `scripts/run_hyperparameter_search.py` | Grid-search hyperparams → best mix |
 | `scripts/run_training_smoke_test.py` | Short training smoke test |
 
 ---
