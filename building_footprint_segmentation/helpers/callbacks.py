@@ -1,4 +1,4 @@
-import csv
+﻿import csv
 import datetime
 import logging
 import os
@@ -21,8 +21,6 @@ from building_footprint_segmentation.utils.py_network import (
     gpu_variable,
     convert_tensor_to_numpy,
 )
-from building_footprint_segmentation.utils.mask_regularize import regularize_binary_mask
-from building_footprint_segmentation.seg.binary import metrics as binary_metrics
 
 
 logger = logging.getLogger("segmentation")
@@ -524,11 +522,9 @@ class MetricsPlotCallback(Callback):
         fig.savefig(self.plot_path, dpi=150)
         plt.close(fig)
 
-
 class PredictionSampleCallback(Callback):
     """
     Save a visual GT vs prediction grid for a fixed set of random validation tiles.
-    Includes a regularized (sharpened) prediction row.
     Updated every epoch so the file always reflects the latest model.
     """
 
@@ -538,16 +534,12 @@ class PredictionSampleCallback(Callback):
         num_samples: int = 5,
         threshold: float = 0.20,
         seed: int = 42,
-        min_area: int = 64,
-        morph_kernel: int = 3,
     ):
         self.log_dir = log_dir
         os.makedirs(self.log_dir, exist_ok=True)
         self.num_samples = num_samples
         self.threshold = threshold
         self.seed = seed
-        self.min_area = min_area
-        self.morph_kernel = morph_kernel
         self.sample_indices = None
         self.plot_path = os.path.join(self.log_dir, "predictions.png")
 
@@ -619,7 +611,6 @@ class PredictionSampleCallback(Callback):
         images = []
         grounds = []
         preds = []
-        regularized = []
 
         with torch.no_grad():
             for index in self.sample_indices:
@@ -646,230 +637,34 @@ class PredictionSampleCallback(Callback):
                 if pred_np.ndim == 3:
                     pred_np = pred_np.reshape(pred_np.shape[-2], pred_np.shape[-1])
 
-                sharp_np = regularize_binary_mask(
-                    pred_np,
-                    min_area=self.min_area,
-                    morph_kernel=self.morph_kernel,
-                ).astype(np.float32) / 255.0
-
                 images.append(image_np)
                 grounds.append(ground_np)
                 preds.append(pred_np)
-                regularized.append(sharp_np)
 
         cols = len(self.sample_indices)
-        fig, axes = plt.subplots(4, cols, figsize=(3.0 * cols, 11.5), squeeze=False)
+        fig, axes = plt.subplots(3, cols, figsize=(3.0 * cols, 9.0), squeeze=False)
         fig.suptitle(
-            f"Validation Samples — Epoch {epoch} "
-            "(image / GT / prediction / regularized)",
+            f"Validation Samples — Epoch {epoch} (image / GT / prediction)",
             fontsize=12,
             fontweight="bold",
         )
 
-        row_labels = ["Image", "Ground Truth", "Prediction", "Regularized"]
-        for col, (image_np, ground_np, pred_np, sharp_np) in enumerate(
-            zip(images, grounds, preds, regularized)
-        ):
+        for col, (image_np, ground_np, pred_np) in enumerate(zip(images, grounds, preds)):
             axes[0][col].imshow(image_np)
             axes[0][col].set_title(f"#{self.sample_indices[col]}", fontsize=9)
             axes[0][col].axis("off")
 
             axes[1][col].imshow(ground_np, cmap="gray", vmin=0, vmax=1)
+            if col == 0:
+                axes[1][col].set_ylabel("Ground Truth", fontsize=10)
             axes[1][col].axis("off")
 
             axes[2][col].imshow(pred_np, cmap="gray", vmin=0, vmax=1)
+            if col == 0:
+                axes[2][col].set_ylabel("Prediction", fontsize=10)
             axes[2][col].axis("off")
 
-            axes[3][col].imshow(sharp_np, cmap="gray", vmin=0, vmax=1)
-            axes[3][col].axis("off")
-
-            if col == 0:
-                for row, label in enumerate(row_labels):
-                    axes[row][col].set_ylabel(label, fontsize=10)
-
         fig.tight_layout(rect=[0, 0.02, 1, 0.95])
-        fig.savefig(self.plot_path, dpi=150)
-        plt.close(fig)
-
-
-class RegularizedMetricsCallback(Callback):
-    """
-    Evaluate validation metrics after mask regularization and plot a second chart.
-    """
-
-    def __init__(
-        self,
-        log_dir,
-        threshold: float = 0.20,
-        min_area: int = 64,
-        morph_kernel: int = 3,
-    ):
-        self.log_dir = log_dir
-        os.makedirs(self.log_dir, exist_ok=True)
-        self.threshold = threshold
-        self.min_area = min_area
-        self.morph_kernel = morph_kernel
-        self.csv_path = os.path.join(self.log_dir, "results_regularized.csv")
-        self.plot_path = os.path.join(self.log_dir, "results_regularized.png")
-        self.history = []
-        self.metric_fns = [
-            binary_metrics.accuracy,
-            binary_metrics.precision,
-            binary_metrics.recall,
-            binary_metrics.f1,
-            binary_metrics.iou,
-        ]
-
-    def on_epoch_end(self, epoch, logs=None):
-        logs = logs or {}
-        model = logs.get("model")
-        val_loader = logs.get("val_loader")
-        if model is None or val_loader is None:
-            return
-
-        metrics = self._evaluate_regularized(model, val_loader)
-        row = {"epoch": int(epoch), **{f"valid_{k}": float(v) for k, v in metrics.items()}}
-        self.history.append(row)
-        self._write_csv()
-        self._plot_results()
-        logger.debug(
-            "Successful on Epoch End {}, Regularized Metrics Saved".format(
-                self.__class__.__name__
-            )
-        )
-
-    def on_end(self, logs=None):
-        self._plot_results()
-        one_liner.one_line(
-            tag="Regularized Chart",
-            tag_data=self.plot_path,
-            tag_color="cyan",
-            to_reset_data=True,
-            to_new_line_data=True,
-        )
-
-    def interruption(self, logs=None):
-        logs = logs or {}
-        model = logs.get("model")
-        val_loader = logs.get("val_loader")
-        if model is not None and val_loader is not None and not self.history:
-            # Ensure at least one evaluation if interrupted early mid-epoch.
-            pass
-        self._plot_results()
-        one_liner.one_line(
-            tag="Regularized Chart",
-            tag_data=self.plot_path,
-            tag_color="cyan",
-            to_reset_data=True,
-            to_new_line_data=True,
-        )
-
-    @staticmethod
-    def _pad_to_multiple(images, multiple: int = 32):
-        import torch.nn.functional as F
-
-        _, _, height, width = images.shape
-        pad_height = (multiple - height % multiple) % multiple
-        pad_width = (multiple - width % multiple) % multiple
-        if pad_height or pad_width:
-            images = F.pad(images, (0, pad_width, 0, pad_height))
-        return images, (height, width)
-
-    def _evaluate_regularized(self, model, val_loader) -> dict:
-        import numpy as np
-
-        model.eval()
-        accumulators = {fn.__name__: [] for fn in self.metric_fns}
-
-        with torch.no_grad():
-            for batch in val_loader:
-                images = gpu_variable(batch["images"])
-                grounds = batch["ground_truth"].float()
-
-                batch_size = images.shape[0]
-                for index in range(batch_size):
-                    image = images[index : index + 1]
-                    ground = grounds[index : index + 1]
-                    padded, (orig_h, orig_w) = self._pad_to_multiple(image)
-                    prediction = model(padded).sigmoid()
-                    prediction = prediction[:, :, :orig_h, :orig_w]
-                    prediction = (prediction >= self.threshold).float()
-
-                    pred_np = convert_tensor_to_numpy(prediction[0, 0])
-                    sharp = regularize_binary_mask(
-                        pred_np,
-                        min_area=self.min_area,
-                        morph_kernel=self.morph_kernel,
-                    )
-                    sharp_tensor = torch.from_numpy(
-                        (sharp > 0).astype(np.float32)
-                    ).view(1, 1, orig_h, orig_w)
-
-                    for fn in self.metric_fns:
-                        accumulators[fn.__name__].append(
-                            float(fn(ground.cpu(), sharp_tensor))
-                        )
-
-        return {
-            name: float(np.mean(values)) if values else 0.0
-            for name, values in accumulators.items()
-        }
-
-    def _write_csv(self):
-        if not self.history:
-            return
-        fieldnames = list(self.history[0].keys())
-        with open(self.csv_path, "w", newline="", encoding="utf-8") as handle:
-            writer = csv.DictWriter(handle, fieldnames=fieldnames)
-            writer.writeheader()
-            writer.writerows(self.history)
-
-    def _plot_results(self):
-        if not self.history:
-            return
-
-        try:
-            import matplotlib
-
-            matplotlib.use("Agg")
-            import matplotlib.pyplot as plt
-        except ImportError as exc:
-            raise ImportError(
-                "matplotlib is required for results charts. "
-                "Install with: pip install matplotlib"
-            ) from exc
-
-        epochs = [row["epoch"] for row in self.history]
-        panels = [
-            ("Accuracy (regularized)", "valid_accuracy"),
-            ("Precision (regularized)", "valid_precision"),
-            ("Recall (regularized)", "valid_recall"),
-            ("F1 (regularized)", "valid_f1"),
-            ("IoU (regularized)", "valid_iou"),
-        ]
-
-        cols = 2
-        rows = (len(panels) + cols - 1) // cols
-        fig, axes = plt.subplots(rows, cols, figsize=(12, 3.2 * rows), squeeze=False)
-        fig.suptitle(
-            "Validation Results After Mask Regularization",
-            fontsize=14,
-            fontweight="bold",
-        )
-
-        for index, (title, key) in enumerate(panels):
-            ax = axes[index // cols][index % cols]
-            values = [row.get(key) for row in self.history]
-            ax.plot(epochs, values, marker="o", markersize=2, linewidth=1.5, label="val")
-            ax.set_title(title)
-            ax.set_xlabel("Epoch")
-            ax.grid(True, alpha=0.3)
-            ax.legend(loc="best", fontsize=8)
-
-        for index in range(len(panels), rows * cols):
-            axes[index // cols][index % cols].axis("off")
-
-        fig.tight_layout(rect=[0, 0.02, 1, 0.96])
         fig.savefig(self.plot_path, dpi=150)
         plt.close(fig)
 
@@ -881,7 +676,6 @@ def load_default_callbacks(log_dir: str):
         TensorBoardCallback(log_dir),
         TrainStateCallback(log_dir),
         MetricsPlotCallback(log_dir),
-        RegularizedMetricsCallback(log_dir),
         PredictionSampleCallback(log_dir),
     ]
 

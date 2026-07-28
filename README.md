@@ -4,7 +4,7 @@ Train and run inference for **building footprint segmentation** on satellite and
 
 This is a modernized fork of
 [fuzailpalnak/building-footprint-segmentation](https://github.com/fuzailpalnak/building-footprint-segmentation)
-with CUDA-ready PyTorch, Windows fixes, geospatial prep scripts, training charts, and mask regularization.
+with CUDA-ready PyTorch, Windows fixes, geospatial prep scripts, and training charts.
 
 ![Python](https://img.shields.io/badge/python-v3.9+-blue.svg)
 ![Licence](https://img.shields.io/github/license/fuzailpalnak/building-footprint-segmentation)
@@ -19,10 +19,9 @@ with CUDA-ready PyTorch, Windows fixes, geospatial prep scripts, training charts
 2. [Data format](#data-format)
 3. [Inference guide](#inference-guide)
 4. [Training guide](#training-guide)
-5. [Mask regularization](#mask-regularization)
-6. [Helper scripts](#helper-scripts)
-7. [Weights & models](#weights--models)
-8. [Notes & limitations](#notes--limitations)
+5. [Helper scripts](#helper-scripts)
+6. [Weights & models](#weights--models)
+7. [Notes & limitations](#notes--limitations)
 
 ---
 
@@ -178,16 +177,6 @@ python scripts/run_inference_test.py \
 
 Edge tiles that are not multiples of 32 are **padded automatically**, then cropped back.
 
-### Optional: sharpen prediction masks
-
-Raw network masks are soft. To force sharper polygonal footprints:
-
-```bash
-python scripts/regularize_masks.py \
-  --input outputs/steyr_preds \
-  --output outputs/steyr_preds_regularized
-```
-
 ### Python API
 
 ```python
@@ -289,8 +278,7 @@ python scripts/run_training_smoke_test.py --data data/dummy --epochs 1 --batch-s
 | File | Description |
 |------|-------------|
 | `results.png` / `results.csv` | Train/val loss & metrics per epoch |
-| `results_regularized.png` / `.csv` | Val metrics **after** mask regularization (when enabled) |
-| `predictions.png` | Fixed val samples: image / GT / prediction [/ regularized] |
+| `predictions.png` | Fixed val samples: image / GT / prediction |
 | `<timestamp>/state/best.pt` | Best validation-loss checkpoint |
 | `<timestamp>/chk_pth/chk_pth.pt` | Latest weights |
 
@@ -313,32 +301,13 @@ Top → bottom: **RGB image**, **ground truth**, **model prediction**
 
 - **Train metrics** usually climb smoothly; **val metrics** can be noisier.
 - Prefer the checkpoint with best **val IoU / F1** (or lowest val loss in `best.pt`), not the last epoch alone.
-- Predictions often locate buildings well but look **softer** than vector GT — use [mask regularization](#mask-regularization) for sharper footprints.
+- Predictions often locate buildings well but look **softer** than vector-derived GT (sharp polygons).
 
 ### TensorBoard (optional)
 
 ```bash
 tensorboard --logdir="outputs/steyr_training_300"
 ```
-
----
-
-## Mask regularization
-
-Pixel CNNs produce soft blobs; vector GT has sharp corners. After inference (or during training visualization), masks can be regularized:
-
-1. Morphological clean-up  
-2. Contour extraction  
-3. Orthogonalization (snap toward right angles)  
-4. Rasterize sharp polygons  
-
-```bash
-python scripts/regularize_masks.py \
-  --input outputs/steyr_preds \
-  --output outputs/steyr_preds_regularized
-```
-
-During training, `PredictionSampleCallback` / `RegularizedMetricsCallback` can also write a regularized row and a second metrics chart when enabled in `scripts/run_training.py`.
 
 ---
 
@@ -353,7 +322,6 @@ During training, `PredictionSampleCallback` / `RegularizedMetricsCallback` can a
 | `scripts/prepare_steyr_dataset.py` | Spatial train/val split |
 | `scripts/run_inference_test.py` | Inference → `*_mask.png` |
 | `scripts/run_training.py` | Fine-tune + charts |
-| `scripts/regularize_masks.py` | Sharpen predicted masks |
 | `scripts/run_training_smoke_test.py` | Short training smoke test |
 
 ---
@@ -380,7 +348,6 @@ During training, `PredictionSampleCallback` / `RegularizedMetricsCallback` can a
 | Callback | Writes |
 |----------|--------|
 | `MetricsPlotCallback` | `results.csv`, `results.png` |
-| `RegularizedMetricsCallback` | `results_regularized.csv`, `results_regularized.png` |
 | `PredictionSampleCallback` | `predictions.png` |
 | `TrainStateCallback` | `best.pt` / `default.pt` |
 | `TrainChkCallback` | `chk_pth.pt` |

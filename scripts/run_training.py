@@ -12,7 +12,6 @@ from building_footprint_segmentation.helpers.callbacks import (
     CallbackList,
     MetricsPlotCallback,
     PredictionSampleCallback,
-    RegularizedMetricsCallback,
     TimeCallback,
     TrainChkCallback,
     TrainStateCallback,
@@ -129,10 +128,6 @@ def main() -> None:
             TrainStateCallback(log_dir=str(output_dir)),
             TrainChkCallback(log_dir=str(output_dir)),
             MetricsPlotCallback(log_dir=str(output_dir)),
-            RegularizedMetricsCallback(
-                log_dir=str(output_dir),
-                threshold=args.threshold,
-            ),
             PredictionSampleCallback(
                 log_dir=str(output_dir),
                 num_samples=args.sample_count,
@@ -162,8 +157,6 @@ def main() -> None:
     print("Training complete.")
     print(f"Results chart: {output_dir / 'results.png'}")
     print(f"Results CSV: {output_dir / 'results.csv'}")
-    print(f"Regularized chart: {output_dir / 'results_regularized.png'}")
-    print(f"Regularized CSV: {output_dir / 'results_regularized.csv'}")
     print(f"Prediction samples: {output_dir / 'predictions.png'}")
     print(f"Best checkpoint: {output_dir / 'state' / 'best.pt'}")
     print(f"Latest weights: {output_dir / 'chk_pth' / 'chk_pth.pt'}")

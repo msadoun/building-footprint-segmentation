@@ -122,8 +122,6 @@ refine.pth
 # Training metric exports under outputs/ (docs/assets keeps example charts)
 results.csv
 results.png
-results_regularized.csv
-results_regularized.png
 predictions.png
 !docs/
 !docs/assets/
