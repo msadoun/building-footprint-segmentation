@@ -26,6 +26,28 @@ with CUDA-ready PyTorch, Windows fixes, geospatial prep scripts, and training ch
 
 ---
 
+## Running scripts (CONFIG first)
+
+Every main script has a **`CONFIG`** block near the top. Edit paths there, then run the script with no arguments:
+
+```bash
+python scripts/run_training.py
+python scripts/run_inference_test.py
+```
+
+CLI flags are optional and only override `CONFIG` when provided.
+
+Default output layout:
+
+```text
+outputs/
+  run/              # training runs
+  inference/        # inference masks
+  hyperparameter/   # hyperparameter search trials + summaries
+```
+
+---
+
 ## Installation
 
 ### 1. Create the environment (recommended)
@@ -101,17 +123,11 @@ The library expects **aerial / satellite RGB** imagery. Pretrained `refine.pth` 
 
 ### Inference only
 
-```text
-dataset_root/
-  test/
-    images/
-      tile_001.png
-      tile_002.png
-```
+Any folder of RGB images works. Pass that folder directly to inference (`CONFIG["images"]` or `--images`).  
+No `test/images` nesting is required.
 
-Labels are **not** required. Only real image files are loaded  
-(`.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.bmp`, `.webp`).  
-GDAL sidecars like `*.aux.xml` are ignored.
+Supported: `.png`, `.jpg`, `.jpeg`, `.tif`, `.tiff`, `.bmp`, `.webp`  
+(GDAL sidecars like `*.aux.xml` are ignored.)
 
 ### Training
 
@@ -139,32 +155,45 @@ Prefer a **fixed tile size** (e.g. all `512×512`) so `batch_size > 1` works.
 
 ## Inference guide
 
-### Quick start (pretrained)
+### Option A — edit paths in the script (recommended)
 
-```bash
-python scripts/create_dummy_data.py
-python scripts/run_inference_test.py --data data/dummy --weights refine.pth --output outputs/inference_test --threshold 0.20
+Open `scripts/run_inference_test.py` and set the `CONFIG` block:
+
+```python
+CONFIG = {
+    "images": r"D:\sadoun\Devs\BuildingFootPrint\data\steyr_512\test\images",
+    "weights": r"D:\sadoun\Devs\BuildingFootPrint\refine.pth",
+    "output": r"D:\sadoun\Devs\BuildingFootPrint\outputs\inference",
+    "model": "ReFineNet",
+    "threshold": 0.20,
+    "batch_size": 1,
+}
 ```
 
-Masks are written as `outputs/inference_test/*_mask.png`  
-(`0` = background, `255` = building).
-
-### Inference on your orthophoto tiles
-
-1. Put RGB tiles in `data/my_area/test/images/`
-2. Run:
+Then run:
 
 ```bash
-python scripts/run_inference_test.py --data data/my_area --weights refine.pth --output outputs/my_preds --threshold 0.20
+python scripts/run_inference_test.py
+```
+
+`--images` is the folder that **actually contains** the image files. No forced `test/images` layout.
+
+### Option B — CLI overrides
+
+Any CLI flag overrides `CONFIG`:
+
+```bash
+python scripts/run_inference_test.py --images data/steyr_512/images --weights refine.pth --output outputs/inference --threshold 0.20
 ```
 
 With a fine-tuned checkpoint:
 
 ```bash
-python scripts/run_inference_test.py --data data/steyr_512 --weights outputs/steyr_training_300/<timestamp>/chk_pth/chk_pth.pt --output outputs/steyr_preds --threshold 0.20
+python scripts/run_inference_test.py --images data/steyr_512/images --weights outputs/run/<timestamp>/chk_pth/chk_pth.pt --output outputs/inference --threshold 0.20
 ```
 
-Edge tiles that are not multiples of 32 are **padded automatically**, then cropped back.
+Masks are written as `*_mask.png` (`0` = background, `255` = building).  
+Edge tiles that are not multiples of 32 are padded automatically, then cropped back.
 
 ### Python API
 
@@ -199,7 +228,7 @@ with torch.no_grad():
 
 This section walks through preparing custom GeoTIFF + shapefile data, fine-tuning, and reading the charts produced during training.
 
-Example charts below are from a **300-epoch Steyr run** (`outputs/steyr_training_300`).
+Example charts below are from a **300-epoch Steyr run** (saved under `docs/assets/`; live runs go to `outputs/run/`).
 
 ### Step A — Chip the GeoTIFF
 
@@ -227,7 +256,7 @@ python scripts/prepare_steyr_dataset.py --images data/steyr_512/test/images --la
 ### Step D — Fine-tune
 
 ```bash
-python scripts/run_training.py --data data/steyr_train --weights refine.pth --output outputs/steyr_training_300 --epochs 300 --batch-size 8 --lr 0.0001
+python scripts/run_training.py --data data/steyr_train --weights refine.pth --output outputs/run --epochs 300 --batch-size 8 --lr 0.0001
 ```
 
 Useful flags:
@@ -280,7 +309,7 @@ Top → bottom: **RGB image**, **ground truth**, **model prediction**
 ### TensorBoard (optional)
 
 ```bash
-tensorboard --logdir="outputs/steyr_training_300"
+tensorboard --logdir="outputs/run"
 ```
 
 ---
@@ -294,7 +323,7 @@ Use this after you have a prepared train/val dataset. The search trains **every 
 Example (512 or 1024 dataset — change `--data` / `--batch-sizes` as needed):
 
 ```bash
-python scripts/run_hyperparameter_search.py --data data/steyr_train_1024 --weights refine.pth --output outputs/hyperparam_search_1024 --epochs-per-trial 20 --lrs 1e-5,5e-5,1e-4 --batch-sizes 2,4 --weight-decays 0.0,1e-4 --criteria BinaryCrossEntropy,Dice --metric valid_iou
+python scripts/run_hyperparameter_search.py --data data/steyr_train_1024 --weights refine.pth --output outputs/hyperparameter --epochs-per-trial 20 --lrs 1e-5,5e-5,1e-4 --batch-sizes 2,4 --weight-decays 0.0,1e-4 --criteria BinaryCrossEntropy,Dice --metric valid_iou
 ```
 
 Defaults if you omit ranges:
@@ -314,7 +343,7 @@ Tip: cap the grid with `--max-trials 6` for a quick smoke search.
 ### What each trial writes
 
 ```text
-outputs/hyperparam_search_1024/
+outputs/hyperparameter/
   trial_000_.../
     hyperparameters.json
     results.csv
@@ -334,7 +363,7 @@ outputs/hyperparam_search_1024/
 Open `best_hyperparameters.json`, then run a full training job, for example:
 
 ```bash
-python scripts/run_training.py --data data/steyr_train_1024 --weights refine.pth --output outputs/steyr_training_1024_best --epochs 300 --batch-size 2 --lr 0.0001
+python scripts/run_training.py --data data/steyr_train_1024 --weights refine.pth --output outputs/run --epochs 300 --batch-size 2 --lr 0.0001
 ```
 
 (Replace `--batch-size` / `--lr` with the values from `best_hyperparameters.json`.)

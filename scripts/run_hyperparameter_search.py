@@ -1,5 +1,10 @@
 """Grid-search hyperparameters for ReFineNet fine-tuning.
 
+Edit the CONFIG block below, then run:
+
+    python scripts/run_hyperparameter_search.py
+
+CLI flags are optional and override CONFIG when provided.
 Tries every mix of the provided hyperparameter ranges, trains each mix for a
 fixed number of epochs, writes per-trial charts, then reports the best mix.
 """
@@ -28,8 +33,30 @@ from building_footprint_segmentation.helpers.callbacks import (
 )
 from building_footprint_segmentation.segmentation import init_segmentation
 from building_footprint_segmentation.trainer import Trainer
+from building_footprint_segmentation.utils.script_config import apply_cli_overrides
 
 configure_windows_openmp()
+
+# ---------------------------------------------------------------------------
+# CONFIG — edit these paths / settings directly
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+CONFIG = {
+    "data": str(PROJECT_ROOT / "data" / "steyr_train"),
+    "weights": str(PROJECT_ROOT / "refine.pth"),
+    "output": str(PROJECT_ROOT / "outputs" / "hyperparameter"),
+    "epochs_per_trial": 20,
+    "lrs": [1e-5, 5e-5, 1e-4],
+    "batch_sizes": [2, 4, 8],
+    "weight_decays": [0.0, 1e-4],
+    "criteria": ["BinaryCrossEntropy", "Dice"],
+    "thresholds": [0.20],
+    "metric": "valid_iou",
+    "sample_count": 5,
+    "max_trials": 0,  # 0 = run full grid
+}
+# ---------------------------------------------------------------------------
 
 
 def _parse_floats(text: str) -> list[float]:
@@ -45,70 +72,43 @@ def _parse_strings(text: str) -> list[str]:
 
 
 def parse_args() -> argparse.Namespace:
-    project_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--data",
-        default="data/steyr_train",
-        help="Dataset root with train/ and val/ splits",
-    )
-    parser.add_argument(
-        "--weights",
-        default=str(project_root / "refine.pth"),
-        help="Pretrained weights for fine-tuning",
-    )
-    parser.add_argument(
-        "--output",
-        default="outputs/hyperparam_search",
-        help="Root folder for all search trials and summary files",
-    )
+    parser.add_argument("--data", default=None)
+    parser.add_argument("--weights", default=None)
+    parser.add_argument("--output", default=None)
     parser.add_argument(
         "--epochs-per-trial",
+        dest="epochs_per_trial",
         type=int,
-        default=20,
-        help="Epochs to train for each hyperparameter mix (default: 20)",
+        default=None,
     )
-    parser.add_argument(
-        "--lrs",
-        default="1e-5,5e-5,1e-4",
-        help="Comma-separated learning rates to try",
-    )
+    parser.add_argument("--lrs", type=_parse_floats, default=None)
     parser.add_argument(
         "--batch-sizes",
-        default="2,4,8",
-        help="Comma-separated batch sizes to try",
+        dest="batch_sizes",
+        type=_parse_ints,
+        default=None,
     )
     parser.add_argument(
         "--weight-decays",
-        default="0.0,1e-4",
-        help="Comma-separated Adam weight_decay values to try",
+        dest="weight_decays",
+        type=_parse_floats,
+        default=None,
     )
-    parser.add_argument(
-        "--criteria",
-        default="BinaryCrossEntropy,Dice",
-        help="Comma-separated loss names: BinaryCrossEntropy, Dice, IOU",
-    )
-    parser.add_argument(
-        "--thresholds",
-        default="0.20",
-        help="Comma-separated prediction thresholds (visualization only)",
-    )
-    parser.add_argument(
-        "--metric",
-        default="valid_iou",
-        help="Metric to maximize when picking the winner (default: valid_iou)",
-    )
+    parser.add_argument("--criteria", type=_parse_strings, default=None)
+    parser.add_argument("--thresholds", type=_parse_floats, default=None)
+    parser.add_argument("--metric", default=None)
     parser.add_argument(
         "--sample-count",
+        dest="sample_count",
         type=int,
-        default=5,
-        help="Validation samples in each trial predictions.png",
+        default=None,
     )
     parser.add_argument(
         "--max-trials",
+        dest="max_trials",
         type=int,
-        default=0,
-        help="Optional cap on number of mixes (0 = run full grid)",
+        default=None,
     )
     return parser.parse_args()
 
@@ -311,10 +311,15 @@ def plot_curve_overlay(
 
 
 def main() -> None:
-    args = parse_args()
-    data_root = Path(args.data)
-    output_root = Path(args.output)
-    weights_path = Path(args.weights)
+    settings = apply_cli_overrides(CONFIG, parse_args())
+
+    data_root = Path(settings["data"])
+    output_root = Path(settings["output"])
+    weights_path = Path(settings["weights"])
+    epochs_per_trial = int(settings["epochs_per_trial"])
+    metric = settings["metric"]
+    sample_count = int(settings["sample_count"])
+    max_trials = int(settings["max_trials"])
 
     train_images = data_root / "train" / "images"
     val_images = data_root / "val" / "images"
@@ -328,22 +333,22 @@ def main() -> None:
     if weights is None:
         print(f"Warning: weights not found at {weights_path}, training from scratch.")
 
-    lrs = _parse_floats(args.lrs)
-    batch_sizes = _parse_ints(args.batch_sizes)
-    weight_decays = _parse_floats(args.weight_decays)
-    criteria = _parse_strings(args.criteria)
-    thresholds = _parse_floats(args.thresholds)
+    lrs = list(settings["lrs"])
+    batch_sizes = list(settings["batch_sizes"])
+    weight_decays = list(settings["weight_decays"])
+    criteria = list(settings["criteria"])
+    thresholds = list(settings["thresholds"])
 
     grid = list(
         itertools.product(lrs, batch_sizes, weight_decays, criteria, thresholds)
     )
-    if args.max_trials and args.max_trials > 0:
-        grid = grid[: args.max_trials]
+    if max_trials > 0:
+        grid = grid[:max_trials]
 
     output_root.mkdir(parents=True, exist_ok=True)
     print(f"Search root: {output_root.resolve()}")
-    print(f"Trials: {len(grid)} | epochs/trial: {args.epochs_per_trial}")
-    print(f"Optimize: maximize {args.metric}")
+    print(f"Trials: {len(grid)} | epochs/trial: {epochs_per_trial}")
+    print(f"Optimize: maximize {metric}")
 
     summary_rows: list[dict[str, Any]] = []
     trial_dirs: list[Path] = []
@@ -355,7 +360,7 @@ def main() -> None:
             "weight_decay": weight_decay,
             "criterion": criterion,
             "threshold": threshold,
-            "epochs": args.epochs_per_trial,
+            "epochs": epochs_per_trial,
         }
         name = trial_name(params, index)
         trial_dir = output_root / name
@@ -372,7 +377,7 @@ def main() -> None:
             **params,
             "status": "ok",
             "error": "",
-            args.metric: None,
+            metric: None,
             "best_epoch": None,
         }
 
@@ -382,17 +387,17 @@ def main() -> None:
                 weights=weights,
                 trial_dir=trial_dir,
                 params=params,
-                epochs=args.epochs_per_trial,
-                sample_count=args.sample_count,
+                epochs=epochs_per_trial,
+                sample_count=sample_count,
             )
-            best_value, best_row = read_best_metric(trial_dir / "results.csv", args.metric)
-            row[args.metric] = best_value
+            best_value, best_row = read_best_metric(trial_dir / "results.csv", metric)
+            row[metric] = best_value
             row["best_epoch"] = int(best_row["epoch"]) if best_row else None
             if best_row:
                 for key, value in best_row.items():
                     if key.startswith("valid_") or key.startswith("train_"):
                         row[f"at_best_{key}"] = float(value)
-            print(f"Trial best {args.metric}: {best_value}")
+            print(f"Trial best {metric}: {best_value}")
         except Exception as exc:
             row["status"] = "failed"
             row["error"] = str(exc)
@@ -403,12 +408,12 @@ def main() -> None:
         write_summary_csv(output_root / "search_summary.csv", summary_rows)
 
     completed = [
-        row for row in summary_rows if row.get("status") == "ok" and row.get(args.metric) is not None
+        row for row in summary_rows if row.get("status") == "ok" and row.get(metric) is not None
     ]
     if not completed:
         raise RuntimeError("All hyperparameter trials failed. See search_summary.csv.")
 
-    best = max(completed, key=lambda row: float(row[args.metric]))
+    best = max(completed, key=lambda row: float(row[metric]))
     best_params = {
         "lr": best["lr"],
         "batch_size": best["batch_size"],
@@ -416,8 +421,8 @@ def main() -> None:
         "criterion": best["criterion"],
         "threshold": best["threshold"],
         "epochs_per_trial": best["epochs"],
-        "selection_metric": args.metric,
-        "best_metric_value": best[args.metric],
+        "selection_metric": metric,
+        "best_metric_value": best[metric],
         "best_epoch": best["best_epoch"],
         "trial": best["trial"],
         "trial_dir": best["trial_dir"],
@@ -434,8 +439,8 @@ def main() -> None:
         if source.exists():
             shutil.copy2(source, output_root / f"best_{filename}")
 
-    plot_comparison(summary_rows, args.metric, output_root / "comparison.png")
-    plot_curve_overlay(trial_dirs, args.metric, output_root / "curves_comparison.png")
+    plot_comparison(summary_rows, metric, output_root / "comparison.png")
+    plot_curve_overlay(trial_dirs, metric, output_root / "curves_comparison.png")
 
     print("\n" + "=" * 72)
     print("HYPERPARAMETER SEARCH COMPLETE")

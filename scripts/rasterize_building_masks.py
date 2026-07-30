@@ -1,4 +1,11 @@
-"""Rasterize building footprints onto tile masks aligned with chipped PNGs."""
+"""Rasterize building footprints onto tile masks aligned with chipped PNGs.
+
+Edit the CONFIG block below, then run:
+
+    python scripts/rasterize_building_masks.py
+
+CLI flags are optional and override CONFIG when provided.
+"""
 
 from __future__ import annotations
 
@@ -10,33 +17,34 @@ import cv2
 import numpy as np
 from osgeo import gdal
 
+from building_footprint_segmentation.utils.script_config import apply_cli_overrides
+
 gdal.UseExceptions()
 
 TILE_NAME_RE = re.compile(r"^tile_(\d+)_(\d+)$")
 
+# ---------------------------------------------------------------------------
+# CONFIG — edit these paths / settings directly
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+CONFIG = {
+    "geotiff": r"D:\sadoun\Devs\TestAreaSteyr\Tif\TestAreaSteyr.tif",
+    "shapefile": r"D:\sadoun\Devs\TestAreaSteyr\Buildings\Original_DATA_2026.shp",
+    # Folder that actually contains tile PNGs
+    "images": str(PROJECT_ROOT / "data" / "steyr_512" / "images"),
+    # Folder for label masks (used as-is)
+    "labels": str(PROJECT_ROOT / "data" / "steyr_512" / "labels"),
+}
+# ---------------------------------------------------------------------------
+
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--geotiff",
-        default=r"D:\sadoun\Devs\TestAreaSteyr\Tif\TestAreaSteyr.tif",
-        help="Reference GeoTIFF (same grid used when chipping tiles)",
-    )
-    parser.add_argument(
-        "--shapefile",
-        default=r"D:\sadoun\Devs\TestAreaSteyr\Buildings\Original_DATA_2026.shp",
-        help="Building footprint shapefile",
-    )
-    parser.add_argument(
-        "--images",
-        default="data/steyr_512/test/images",
-        help="Folder with tile PNG images",
-    )
-    parser.add_argument(
-        "--labels",
-        default=None,
-        help="Output folder for label masks (default: <images>/../labels)",
-    )
+    parser.add_argument("--geotiff", default=None)
+    parser.add_argument("--shapefile", default=None)
+    parser.add_argument("--images", default=None)
+    parser.add_argument("--labels", default=None)
     return parser.parse_args()
 
 
@@ -94,11 +102,12 @@ def rasterize_tile_mask(
 
 
 def main() -> None:
-    args = parse_args()
-    geotiff_path = Path(args.geotiff)
-    shapefile_path = Path(args.shapefile)
-    images_dir = Path(args.images)
-    labels_dir = Path(args.labels or images_dir.parent / "labels")
+    settings = apply_cli_overrides(CONFIG, parse_args())
+
+    geotiff_path = Path(settings["geotiff"])
+    shapefile_path = Path(settings["shapefile"])
+    images_dir = Path(settings["images"])
+    labels_dir = Path(settings["labels"])
 
     if not geotiff_path.exists():
         raise FileNotFoundError(f"GeoTIFF not found: {geotiff_path}")

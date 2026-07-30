@@ -1,4 +1,9 @@
-"""Create a small dummy dataset for local smoke tests."""
+"""Create a small dummy dataset for local smoke tests.
+
+Edit the CONFIG block below, then run:
+
+    python scripts/create_dummy_data.py
+"""
 
 from __future__ import annotations
 
@@ -8,11 +13,22 @@ from pathlib import Path
 import cv2
 import numpy as np
 
+from building_footprint_segmentation.utils.script_config import apply_cli_overrides
+
+# ---------------------------------------------------------------------------
+# CONFIG — edit these paths / settings directly
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+CONFIG = {
+    "output": str(PROJECT_ROOT / "data" / "dummy"),
+}
+# ---------------------------------------------------------------------------
+
 
 def _make_sample(index: int, size: int = 512) -> tuple[np.ndarray, np.ndarray]:
     rng = np.random.default_rng(index)
 
-    # Satellite-like RGB background.
     image = np.zeros((size, size, 3), dtype=np.uint8)
     image[..., 0] = rng.integers(40, 90, size=(size, size), dtype=np.uint8)
     image[..., 1] = rng.integers(80, 140, size=(size, size), dtype=np.uint8)
@@ -20,7 +36,7 @@ def _make_sample(index: int, size: int = 512) -> tuple[np.ndarray, np.ndarray]:
     image = cv2.GaussianBlur(image, (5, 5), 0)
 
     label = np.zeros((size, size, 3), dtype=np.uint8)
-    for box_id in range(3):
+    for _ in range(3):
         width = rng.integers(60, 140)
         height = rng.integers(60, 140)
         x1 = rng.integers(20, size - width - 20)
@@ -65,16 +81,15 @@ def create_dummy_dataset(root: Path) -> None:
     _write_split(root, "test", count=2, start_index=200)
 
 
-def main() -> None:
+def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--output",
-        default="data/dummy",
-        help="Dataset root folder (default: data/dummy)",
-    )
-    args = parser.parse_args()
+    parser.add_argument("--output", default=None)
+    return parser.parse_args()
 
-    root = Path(args.output)
+
+def main() -> None:
+    settings = apply_cli_overrides(CONFIG, parse_args())
+    root = Path(settings["output"])
     create_dummy_dataset(root)
 
     print(f"Created dummy dataset at: {root.resolve()}")

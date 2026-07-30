@@ -1,4 +1,11 @@
-"""Fine-tune ReFineNet on a prepared train/val dataset."""
+"""Fine-tune ReFineNet on a prepared train/val dataset.
+
+Edit the CONFIG block below, then run:
+
+    python scripts/run_training.py
+
+CLI flags are optional and override CONFIG when provided.
+"""
 
 from __future__ import annotations
 
@@ -18,66 +25,52 @@ from building_footprint_segmentation.helpers.callbacks import (
 )
 from building_footprint_segmentation.segmentation import init_segmentation
 from building_footprint_segmentation.trainer import Trainer
+from building_footprint_segmentation.utils.script_config import apply_cli_overrides
 
 configure_windows_openmp()
 
+# ---------------------------------------------------------------------------
+# CONFIG — edit these paths / settings directly
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+CONFIG = {
+    # Dataset root that contains train/ and val/ (with images/ + labels/)
+    "data": str(PROJECT_ROOT / "data" / "steyr_train"),
+    "weights": str(PROJECT_ROOT / "refine.pth"),
+    "output": str(PROJECT_ROOT / "outputs" / "run"),
+    "model": "ReFineNet",
+    "criterion": "BinaryCrossEntropy",
+    "epochs": 300,
+    "batch_size": 8,
+    "lr": 1e-4,
+    "sample_count": 5,
+    "threshold": 0.20,
+}
+# ---------------------------------------------------------------------------
+
 
 def parse_args() -> argparse.Namespace:
-    project_root = Path(__file__).resolve().parents[1]
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--data",
-        default="data/steyr_train",
-        help="Dataset root with train/ and val/ splits",
-    )
-    parser.add_argument(
-        "--weights",
-        default=str(project_root / "refine.pth"),
-        help="Pretrained weights for fine-tuning (default: refine.pth)",
-    )
-    parser.add_argument(
-        "--output",
-        default="outputs/steyr_training",
-        help="Folder for checkpoints and logs",
-    )
-    parser.add_argument(
-        "--epochs",
-        type=int,
-        default=1000,
-        help="Number of training epochs (default: 1000)",
-    )
-    parser.add_argument(
-        "--batch-size",
-        type=int,
-        default=8,
-        help="Batch size (default: 8)",
-    )
-    parser.add_argument(
-        "--lr",
-        type=float,
-        default=1e-4,
-        help="Adam learning rate (default: 1e-4)",
-    )
-    parser.add_argument(
-        "--sample-count",
-        type=int,
-        default=5,
-        help="Number of validation samples in predictions.png (default: 5)",
-    )
-    parser.add_argument(
-        "--threshold",
-        type=float,
-        default=0.20,
-        help="Mask threshold for prediction samples (default: 0.20)",
-    )
+    parser.add_argument("--data", default=None)
+    parser.add_argument("--weights", default=None)
+    parser.add_argument("--output", default=None)
+    parser.add_argument("--model", default=None)
+    parser.add_argument("--criterion", default=None)
+    parser.add_argument("--epochs", type=int, default=None)
+    parser.add_argument("--batch-size", dest="batch_size", type=int, default=None)
+    parser.add_argument("--lr", type=float, default=None)
+    parser.add_argument("--sample-count", dest="sample_count", type=int, default=None)
+    parser.add_argument("--threshold", type=float, default=None)
     return parser.parse_args()
 
 
 def main() -> None:
-    args = parse_args()
-    data_root = Path(args.data)
-    output_dir = Path(args.output)
-    weights_path = Path(args.weights)
+    settings = apply_cli_overrides(CONFIG, parse_args())
+
+    data_root = Path(settings["data"])
+    output_dir = Path(settings["output"])
+    weights_path = Path(settings["weights"])
 
     train_images = data_root / "train" / "images"
     val_images = data_root / "val" / "images"
@@ -102,8 +95,8 @@ def main() -> None:
     output_dir.mkdir(parents=True, exist_ok=True)
 
     segmentation = init_segmentation("binary")
-    model = segmentation.load_model("ReFineNet", transfer_weights=weights)
-    criterion = segmentation.load_criterion(name="BinaryCrossEntropy")
+    model = segmentation.load_model(settings["model"], transfer_weights=weights)
+    criterion = segmentation.load_criterion(name=settings["criterion"])
     loader = segmentation.load_loader(
         root_folder=str(data_root),
         image_normalization="divide_by_255",
@@ -115,12 +108,14 @@ def main() -> None:
                 A.RandomRotate90(p=0.5),
             ]
         ),
-        batch_size=args.batch_size,
+        batch_size=int(settings["batch_size"]),
     )
     metrics = segmentation.load_metrics(
         data_metrics=["accuracy", "precision", "f1", "recall", "iou"]
     )
-    optimizer = segmentation.load_optimizer(model, name="Adam", lr=args.lr)
+    optimizer = segmentation.load_optimizer(
+        model, name="Adam", lr=float(settings["lr"])
+    )
 
     callbacks = CallbackList(
         [
@@ -130,8 +125,8 @@ def main() -> None:
             MetricsPlotCallback(log_dir=str(output_dir)),
             PredictionSampleCallback(
                 log_dir=str(output_dir),
-                num_samples=args.sample_count,
-                threshold=args.threshold,
+                num_samples=int(settings["sample_count"]),
+                threshold=float(settings["threshold"]),
             ),
         ]
     )
@@ -148,11 +143,14 @@ def main() -> None:
 
     print(f"Training data: {data_root.resolve()}")
     print(f"Output: {output_dir.resolve()}")
-    print(f"Epochs: {args.epochs}, batch size: {args.batch_size}, lr: {args.lr}")
+    print(
+        f"Epochs: {settings['epochs']}, batch size: {settings['batch_size']}, "
+        f"lr: {settings['lr']}"
+    )
     print(f"Train tiles: {len(loader.train_loader.dataset)}")
     print(f"Val tiles: {len(loader.val_loader.dataset)}")
 
-    trainer.train(start_epoch=0, end_epoch=args.epochs)
+    trainer.train(start_epoch=0, end_epoch=int(settings["epochs"]))
 
     print("Training complete.")
     print(f"Results chart: {output_dir / 'results.png'}")

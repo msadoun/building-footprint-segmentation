@@ -1,4 +1,11 @@
-"""Split chipped tiles + masks into train/val folders for training."""
+"""Split chipped tiles + masks into train/val folders for training.
+
+Edit the CONFIG block below, then run:
+
+    python scripts/prepare_steyr_dataset.py
+
+CLI flags are optional and override CONFIG when provided.
+"""
 
 from __future__ import annotations
 
@@ -8,38 +15,33 @@ from pathlib import Path
 
 import cv2
 
+from building_footprint_segmentation.utils.script_config import apply_cli_overrides
+
 TILE_PREFIX = "tile_"
+
+# ---------------------------------------------------------------------------
+# CONFIG — edit these paths / settings directly
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+CONFIG = {
+    "images": str(PROJECT_ROOT / "data" / "steyr_512" / "images"),
+    "labels": str(PROJECT_ROOT / "data" / "steyr_512" / "labels"),
+    "output": str(PROJECT_ROOT / "data" / "steyr_train"),
+    "val_fraction": 0.2,
+    # Only keep tiles of this size; set 0 to keep all
+    "only_size": 512,
+}
+# ---------------------------------------------------------------------------
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--images",
-        default="data/steyr_512/test/images",
-        help="Folder with tile PNG images",
-    )
-    parser.add_argument(
-        "--labels",
-        default="data/steyr_512/test/labels",
-        help="Folder with matching label PNG masks",
-    )
-    parser.add_argument(
-        "--output",
-        default="data/steyr_train",
-        help="Dataset root with train/ and val/ splits (default: data/steyr_train)",
-    )
-    parser.add_argument(
-        "--val-fraction",
-        type=float,
-        default=0.2,
-        help="Fraction of tile columns held out for validation (default: 0.2)",
-    )
-    parser.add_argument(
-        "--only-size",
-        type=int,
-        default=512,
-        help="Only include tiles with this width and height (default: 512). Use 0 to keep all.",
-    )
+    parser.add_argument("--images", default=None)
+    parser.add_argument("--labels", default=None)
+    parser.add_argument("--output", default=None)
+    parser.add_argument("--val-fraction", dest="val_fraction", type=float, default=None)
+    parser.add_argument("--only-size", dest="only_size", type=int, default=None)
     return parser.parse_args()
 
 
@@ -60,10 +62,13 @@ def copy_pair(image_path: Path, label_path: Path, split: str, output_root: Path)
 
 
 def main() -> None:
-    args = parse_args()
-    images_dir = Path(args.images)
-    labels_dir = Path(args.labels)
-    output_root = Path(args.output)
+    settings = apply_cli_overrides(CONFIG, parse_args())
+
+    images_dir = Path(settings["images"])
+    labels_dir = Path(settings["labels"])
+    output_root = Path(settings["output"])
+    val_fraction = float(settings["val_fraction"])
+    only_size = int(settings["only_size"])
 
     if not images_dir.exists():
         raise FileNotFoundError(f"Images folder not found: {images_dir}")
@@ -75,7 +80,7 @@ def main() -> None:
         raise FileNotFoundError(f"No tiles found in {images_dir}")
 
     x_values = sorted({tile_x_offset(path) for path in image_paths})
-    val_column_count = max(1, round(len(x_values) * args.val_fraction))
+    val_column_count = max(1, round(len(x_values) * val_fraction))
     val_x_values = set(x_values[-val_column_count:])
 
     train_count = 0
@@ -84,14 +89,14 @@ def main() -> None:
     size_skipped = 0
 
     for image_path in image_paths:
-        if args.only_size:
+        if only_size:
             image = cv2.imread(str(image_path))
             if image is None:
                 print(f"Skipping (unreadable): {image_path.name}")
                 skipped += 1
                 continue
             height, width = image.shape[:2]
-            if width != args.only_size or height != args.only_size:
+            if width != only_size or height != only_size:
                 size_skipped += 1
                 continue
 
@@ -111,15 +116,15 @@ def main() -> None:
     if train_count == 0 or val_count == 0:
         raise RuntimeError(
             f"Split failed: train={train_count}, val={val_count}. "
-            "Try a smaller --val-fraction or check tile names."
+            "Try a smaller val_fraction or check tile names."
         )
 
     print(f"Output: {output_root.resolve()}")
     print(f"Train tiles: {train_count}")
     print(f"Val tiles: {val_count}")
     print(f"Skipped (missing labels): {skipped}")
-    if args.only_size:
-        print(f"Skipped (not {args.only_size}x{args.only_size}): {size_skipped}")
+    if only_size:
+        print(f"Skipped (not {only_size}x{only_size}): {size_skipped}")
     print(f"Val held-out x columns ({len(val_x_values)}): {sorted(val_x_values)}")
 
 

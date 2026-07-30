@@ -1,4 +1,12 @@
-"""Chip a large GeoTIFF into RGB PNG tiles for inference."""
+"""Chip a large GeoTIFF into RGB PNG tiles.
+
+Edit the CONFIG block below, then run:
+
+    python scripts/chip_geotiff_to_png.py
+
+CLI flags are optional and override CONFIG when provided.
+--output / CONFIG['output'] is used as-is (no forced test/images suffix).
+"""
 
 from __future__ import annotations
 
@@ -7,43 +15,42 @@ from pathlib import Path
 
 from osgeo import gdal
 
+from building_footprint_segmentation.utils.script_config import apply_cli_overrides
+
 gdal.UseExceptions()
+
+# ---------------------------------------------------------------------------
+# CONFIG — edit these paths / settings directly
+# ---------------------------------------------------------------------------
+PROJECT_ROOT = Path(__file__).resolve().parents[1]
+
+CONFIG = {
+    "input": r"D:\sadoun\Devs\TestAreaSteyr\Tif\TestAreaSteyr.tif",
+    # Folder that will contain the PNG tiles (used as-is)
+    "output": str(PROJECT_ROOT / "data" / "steyr_512" / "images"),
+    "tile_size": 512,
+    "min_size": 256,
+}
+# ---------------------------------------------------------------------------
 
 
 def parse_args() -> argparse.Namespace:
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument(
-        "--input",
-        default=r"D:\sadoun\Devs\TestAreaSteyr\Tif\TestAreaSteyr.tif",
-        help="Path to source GeoTIFF",
-    )
-    parser.add_argument(
-        "--output",
-        default=None,
-        help=(
-            "Folder for PNG tiles. "
-            "Default: data/steyr_<tile-size>/test/images"
-        ),
-    )
-    parser.add_argument(
-        "--tile-size",
-        type=int,
-        default=1024,
-        help="Tile width/height in pixels (default: 1024)",
-    )
-    parser.add_argument(
-        "--min-size",
-        type=int,
-        default=256,
-        help="Skip edge tiles smaller than this (default: 256)",
-    )
+    parser.add_argument("--input", default=None)
+    parser.add_argument("--output", default=None)
+    parser.add_argument("--tile-size", dest="tile_size", type=int, default=None)
+    parser.add_argument("--min-size", dest="min_size", type=int, default=None)
     return parser.parse_args()
 
 
 def main() -> None:
-    args = parse_args()
-    input_path = Path(args.input)
-    output_dir = Path(args.output or f"data/steyr_{args.tile_size}/test/images")
+    settings = apply_cli_overrides(CONFIG, parse_args())
+
+    input_path = Path(settings["input"])
+    output_dir = Path(settings["output"])
+    tile = int(settings["tile_size"])
+    min_size = int(settings["min_size"])
+
     output_dir.mkdir(parents=True, exist_ok=True)
 
     if not input_path.exists():
@@ -58,14 +65,12 @@ def main() -> None:
     bands = ds.RasterCount
     print(f"Opened: {input_path}")
     print(f"Size: {width} x {height}, bands: {bands}")
+    print(f"Output: {output_dir.resolve()}")
 
     if bands < 3:
         raise RuntimeError(f"Need at least 3 bands for RGB, found {bands}")
 
-    tile = args.tile_size
-    min_size = args.min_size
     written = 0
-
     for y in range(0, height, tile):
         for x in range(0, width, tile):
             win_w = min(tile, width - x)
