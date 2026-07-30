@@ -29,7 +29,10 @@ from building_footprint_segmentation.utils.py_network import (
     gpu_variable,
     to_input_image_tensor,
 )
-from building_footprint_segmentation.utils.script_config import apply_cli_overrides
+from building_footprint_segmentation.utils.script_config import (
+    apply_cli_overrides,
+    create_next_run_dir,
+)
 
 configure_windows_openmp()
 
@@ -39,7 +42,7 @@ configure_windows_openmp()
 PROJECT_ROOT = Path(__file__).resolve().parents[1]
 
 CONFIG = {
-   "images": r"D:\sadoun\Devs\BuildingFootPrint\data\steyr_1024\test\labels",          # folder with the images themselves
+    "images": r"D:\sadoun\Devs\BuildingFootPrint\data\steyr_512\test\images",          # folder with the images themselves
     "weights": r"D:\sadoun\Devs\BuildingFootPrint\outputs\hyperparam_search_1024\trial_023_lr1em04_bs4_wd1em04_Dice_th0.2\20260728-132101\state\best.pt",
     "output": str(PROJECT_ROOT / "outputs" / "inference"),
     "model": "ReFineNet",
@@ -104,7 +107,7 @@ def main() -> None:
 
     images_dir = Path(settings["images"])
     weights_path = Path(settings["weights"])
-    output_dir = Path(settings["output"])
+    output_dir = create_next_run_dir(settings["output"])
     model_name = settings["model"]
     threshold = float(settings["threshold"])
     batch_size = int(settings["batch_size"])
@@ -113,8 +116,6 @@ def main() -> None:
         raise FileNotFoundError(f"Images folder not found: {images_dir}")
     if not weights_path.exists():
         raise FileNotFoundError(f"Weights not found: {weights_path}")
-
-    output_dir.mkdir(parents=True, exist_ok=True)
 
     print(f"PyTorch: {torch.__version__}")
     print(f"CUDA available: {torch.cuda.is_available()}")

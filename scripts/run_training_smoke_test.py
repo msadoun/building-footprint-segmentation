@@ -16,7 +16,10 @@ from building_footprint_segmentation._env import configure_windows_openmp
 from building_footprint_segmentation.helpers.callbacks import CallbackList, TimeCallback
 from building_footprint_segmentation.segmentation import init_segmentation
 from building_footprint_segmentation.trainer import Trainer
-from building_footprint_segmentation.utils.script_config import apply_cli_overrides
+from building_footprint_segmentation.utils.script_config import (
+    apply_cli_overrides,
+    create_next_run_dir,
+)
 
 configure_windows_openmp()
 
@@ -28,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG = {
     "data": str(PROJECT_ROOT / "data" / "dummy"),
     "weights": str(PROJECT_ROOT / "refine.pth"),
-    "output": str(PROJECT_ROOT / "outputs" / "run" / "smoke_test"),
+    "output": str(PROJECT_ROOT / "outputs" / "run"),
     "epochs": 1,
     "batch_size": 2,
 }
@@ -49,7 +52,7 @@ def main() -> None:
     settings = apply_cli_overrides(CONFIG, parse_args())
     data_root = Path(settings["data"])
     weights_path = Path(settings["weights"])
-    output_dir = Path(settings["output"])
+    output_dir = create_next_run_dir(settings["output"])
 
     if not (data_root / "train" / "images").exists():
         raise FileNotFoundError(

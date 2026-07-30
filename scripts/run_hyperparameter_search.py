@@ -33,7 +33,10 @@ from building_footprint_segmentation.helpers.callbacks import (
 )
 from building_footprint_segmentation.segmentation import init_segmentation
 from building_footprint_segmentation.trainer import Trainer
-from building_footprint_segmentation.utils.script_config import apply_cli_overrides
+from building_footprint_segmentation.utils.script_config import (
+    apply_cli_overrides,
+    create_next_run_dir,
+)
 
 configure_windows_openmp()
 
@@ -314,7 +317,7 @@ def main() -> None:
     settings = apply_cli_overrides(CONFIG, parse_args())
 
     data_root = Path(settings["data"])
-    output_root = Path(settings["output"])
+    output_root = create_next_run_dir(settings["output"])
     weights_path = Path(settings["weights"])
     epochs_per_trial = int(settings["epochs_per_trial"])
     metric = settings["metric"]
@@ -345,7 +348,6 @@ def main() -> None:
     if max_trials > 0:
         grid = grid[:max_trials]
 
-    output_root.mkdir(parents=True, exist_ok=True)
     print(f"Search root: {output_root.resolve()}")
     print(f"Trials: {len(grid)} | epochs/trial: {epochs_per_trial}")
     print(f"Optimize: maximize {metric}")

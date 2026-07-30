@@ -37,13 +37,20 @@ python scripts/run_inference_test.py
 
 CLI flags are optional and only override `CONFIG` when provided.
 
-Default output layout:
+Default output layout (each invocation creates the next `run` folder):
 
 ```text
 outputs/
-  run/              # training runs
-  inference/        # inference masks
-  hyperparameter/   # hyperparameter search trials + summaries
+  run/
+    run/            # first training
+    run2/           # second training
+    run3/
+  inference/
+    run/
+    run2/
+  hyperparameter/
+    run/
+    run2/
 ```
 
 ---
@@ -189,8 +196,10 @@ python scripts/run_inference_test.py --images data/steyr_512/images --weights re
 With a fine-tuned checkpoint:
 
 ```bash
-python scripts/run_inference_test.py --images data/steyr_512/images --weights outputs/run/<timestamp>/chk_pth/chk_pth.pt --output outputs/inference --threshold 0.20
+python scripts/run_inference_test.py --images data/steyr_512/images --weights outputs/run/run/state/best.pt --output outputs/inference --threshold 0.20
 ```
+
+Each call creates the next folder under `outputs/inference/` (`run`, then `run2`, …).
 
 Masks are written as `*_mask.png` (`0` = background, `255` = building).  
 Edge tiles that are not multiples of 32 are padded automatically, then cropped back.
@@ -278,6 +287,8 @@ python scripts/run_training_smoke_test.py --data data/dummy --epochs 1 --batch-s
 
 ### Training outputs
 
+Each training call writes into the next folder under `outputs/run/` (`run`, `run2`, …):
+
 | File | Description |
 |------|-------------|
 | `results.png` / `results.csv` | Train/val loss & metrics per epoch |
@@ -343,7 +354,7 @@ Tip: cap the grid with `--max-trials 6` for a quick smoke search.
 ### What each trial writes
 
 ```text
-outputs/hyperparameter/
+outputs/hyperparameter/run/
   trial_000_.../
     hyperparameters.json
     results.csv
