@@ -37,20 +37,20 @@ python scripts/run_inference_test.py
 
 CLI flags are optional and only override `CONFIG` when provided.
 
-Default output layout (each invocation creates the next `run` folder):
+Default output layout (each invocation creates the next numbered folder):
 
 ```text
-outputs/
-  run/
-    run/            # first training
-    run2/           # second training
-    run3/
+runs/
+  training/
+    train1/
+    train2/
+    train3/
   inference/
-    run/
-    run2/
+    inference1/
+    inference2/
   hyperparameter/
-    run/
-    run2/
+    hyperparameter1/
+    hyperparameter2/
 ```
 
 ---
@@ -170,7 +170,7 @@ Open `scripts/run_inference_test.py` and set the `CONFIG` block:
 CONFIG = {
     "images": r"D:\sadoun\Devs\BuildingFootPrint\data\steyr_512\test\images",
     "weights": r"D:\sadoun\Devs\BuildingFootPrint\refine.pth",
-    "output": r"D:\sadoun\Devs\BuildingFootPrint\outputs\inference",
+    "output": r"D:\sadoun\Devs\BuildingFootPrint\runs\inference",
     "model": "ReFineNet",
     "threshold": 0.20,
     "batch_size": 1,
@@ -190,16 +190,16 @@ python scripts/run_inference_test.py
 Any CLI flag overrides `CONFIG`:
 
 ```bash
-python scripts/run_inference_test.py --images data/steyr_512/images --weights refine.pth --output outputs/inference --threshold 0.20
+python scripts/run_inference_test.py --images data/steyr_512/images --weights refine.pth --output runs/inference --threshold 0.20
 ```
 
 With a fine-tuned checkpoint:
 
 ```bash
-python scripts/run_inference_test.py --images data/steyr_512/images --weights outputs/run/run/state/best.pt --output outputs/inference --threshold 0.20
+python scripts/run_inference_test.py --images data/steyr_512/images --weights runs/training/train1/state/best.pt --output runs/inference --threshold 0.20
 ```
 
-Each call creates the next folder under `outputs/inference/` (`run`, then `run2`, …).
+Each call creates the next folder under `runs/inference/` (`inference1`, `inference2`, …).
 
 Masks are written as `*_mask.png` (`0` = background, `255` = building).  
 Edge tiles that are not multiples of 32 are padded automatically, then cropped back.
@@ -237,7 +237,7 @@ with torch.no_grad():
 
 This section walks through preparing custom GeoTIFF + shapefile data, fine-tuning, and reading the charts produced during training.
 
-Example charts below are from a **300-epoch Steyr run** (saved under `docs/assets/`; live runs go to `outputs/run/`).
+Example charts below are from a **300-epoch Steyr run** (saved under `docs/assets/`; live runs go to `runs/training/`).
 
 ### Step A — Chip the GeoTIFF
 
@@ -265,7 +265,7 @@ python scripts/prepare_steyr_dataset.py --images data/steyr_512/test/images --la
 ### Step D — Fine-tune
 
 ```bash
-python scripts/run_training.py --data data/steyr_train --weights refine.pth --output outputs/run --epochs 300 --batch-size 8 --lr 0.0001
+python scripts/run_training.py --data data/steyr_train --weights refine.pth --output runs/training --epochs 300 --batch-size 8 --lr 0.0001
 ```
 
 Useful flags:
@@ -287,12 +287,12 @@ python scripts/run_training_smoke_test.py --data data/dummy --epochs 1 --batch-s
 
 ### Training outputs
 
-Each training call writes into the next folder under `outputs/run/` (`run`, `run2`, …):
+Each training call writes into the next folder under `runs/training/` (`train1`, `train2`, …):
 
 | File | Description |
 |------|-------------|
 | `results.png` / `results.csv` | Train/val loss & metrics per epoch |
-| `predictions.png` | Fixed val samples: image / GT / prediction |
+| `predictions.png` | Fixed val samples: image / GT / prediction / merge (white=TP, blue=FP, red=FN) |
 | `<timestamp>/state/best.pt` | Best validation-loss checkpoint |
 | `<timestamp>/chk_pth/chk_pth.pt` | Latest weights |
 
@@ -306,7 +306,8 @@ Raw model curves for loss, accuracy, precision, recall, F1, IoU, and learning ra
 
 ### Example: validation sample grid (epoch 299)
 
-Top → bottom: **RGB image**, **ground truth**, **model prediction**  
+Top → bottom: **RGB image**, **ground truth**, **model prediction**, **merge**  
+(white = true positive, blue = false positive, red = false negative / missed building)  
 (five fixed validation tiles so you can track progress across epochs):
 
 ![Validation predictions vs ground truth](./docs/assets/training_predictions.png)
@@ -320,7 +321,7 @@ Top → bottom: **RGB image**, **ground truth**, **model prediction**
 ### TensorBoard (optional)
 
 ```bash
-tensorboard --logdir="outputs/run"
+tensorboard --logdir="runs/training"
 ```
 
 ---
@@ -334,7 +335,7 @@ Use this after you have a prepared train/val dataset. The search trains **every 
 Example (512 or 1024 dataset — change `--data` / `--batch-sizes` as needed):
 
 ```bash
-python scripts/run_hyperparameter_search.py --data data/steyr_train_1024 --weights refine.pth --output outputs/hyperparameter --epochs-per-trial 20 --lrs 1e-5,5e-5,1e-4 --batch-sizes 2,4 --weight-decays 0.0,1e-4 --criteria BinaryCrossEntropy,Dice --metric valid_iou
+python scripts/run_hyperparameter_search.py --data data/steyr_train_1024 --weights refine.pth --output runs/hyperparameter --epochs-per-trial 20 --lrs 1e-5,5e-5,1e-4 --batch-sizes 2,4 --weight-decays 0.0,1e-4 --criteria BinaryCrossEntropy,Dice --metric valid_iou
 ```
 
 Defaults if you omit ranges:
@@ -354,7 +355,7 @@ Tip: cap the grid with `--max-trials 6` for a quick smoke search.
 ### What each trial writes
 
 ```text
-outputs/hyperparameter/run/
+runs/hyperparameter/hyperparameter1/
   trial_000_.../
     hyperparameters.json
     results.csv
@@ -374,7 +375,7 @@ outputs/hyperparameter/run/
 Open `best_hyperparameters.json`, then run a full training job, for example:
 
 ```bash
-python scripts/run_training.py --data data/steyr_train_1024 --weights refine.pth --output outputs/run --epochs 300 --batch-size 2 --lr 0.0001
+python scripts/run_training.py --data data/steyr_train_1024 --weights refine.pth --output runs/training --epochs 300 --batch-size 2 --lr 0.0001
 ```
 
 (Replace `--batch-size` / `--lr` with the values from `best_hyperparameters.json`.)

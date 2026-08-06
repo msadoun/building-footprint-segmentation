@@ -526,6 +526,9 @@ class PredictionSampleCallback(Callback):
     """
     Save a visual GT vs prediction grid for a fixed set of random validation tiles.
     Updated every epoch so the file always reflects the latest model.
+
+    Rows: image, ground truth, prediction, merge overlay
+    (white=TP, blue=FP, red=FN; background stays black).
     """
 
     def __init__(
@@ -611,6 +614,7 @@ class PredictionSampleCallback(Callback):
         images = []
         grounds = []
         preds = []
+        merges = []
 
         with torch.no_grad():
             for index in self.sample_indices:
@@ -637,19 +641,35 @@ class PredictionSampleCallback(Callback):
                 if pred_np.ndim == 3:
                     pred_np = pred_np.reshape(pred_np.shape[-2], pred_np.shape[-1])
 
+                gt_bin = ground_np >= 0.5
+                pred_bin = pred_np >= 0.5
+                merge_np = np.zeros((*gt_bin.shape, 3), dtype=np.float32)
+                # True positive: building correctly predicted → white
+                merge_np[gt_bin & pred_bin] = (1.0, 1.0, 1.0)
+                # False positive: predicted building on background → blue
+                merge_np[~gt_bin & pred_bin] = (0.0, 0.45, 1.0)
+                # False negative: missed ground-truth building → red
+                merge_np[gt_bin & ~pred_bin] = (1.0, 0.15, 0.15)
+
                 images.append(image_np)
                 grounds.append(ground_np)
                 preds.append(pred_np)
+                merges.append(merge_np)
 
         cols = len(self.sample_indices)
-        fig, axes = plt.subplots(3, cols, figsize=(3.0 * cols, 9.0), squeeze=False)
+        fig, axes = plt.subplots(4, cols, figsize=(3.0 * cols, 11.5), squeeze=False)
         fig.suptitle(
-            f"Validation Samples — Epoch {epoch} (image / GT / prediction)",
-            fontsize=12,
+            "Validation Samples — Epoch {} "
+            "(image / GT / prediction / merge: white=TP, blue=FP, red=FN)".format(
+                epoch
+            ),
+            fontsize=11,
             fontweight="bold",
         )
 
-        for col, (image_np, ground_np, pred_np) in enumerate(zip(images, grounds, preds)):
+        for col, (image_np, ground_np, pred_np, merge_np) in enumerate(
+            zip(images, grounds, preds, merges)
+        ):
             axes[0][col].imshow(image_np)
             axes[0][col].set_title(f"#{self.sample_indices[col]}", fontsize=9)
             axes[0][col].axis("off")
@@ -664,7 +684,12 @@ class PredictionSampleCallback(Callback):
                 axes[2][col].set_ylabel("Prediction", fontsize=10)
             axes[2][col].axis("off")
 
-        fig.tight_layout(rect=[0, 0.02, 1, 0.95])
+            axes[3][col].imshow(merge_np)
+            if col == 0:
+                axes[3][col].set_ylabel("Merge", fontsize=10)
+            axes[3][col].axis("off")
+
+        fig.tight_layout(rect=[0, 0.02, 1, 0.94])
         fig.savefig(self.plot_path, dpi=150)
         plt.close(fig)
 

@@ -41,7 +41,7 @@ CONFIG = {
     # Dataset root that contains train/ and val/ (with images/ + labels/)
     "data": str(PROJECT_ROOT / "data" / "steyr_train"),
     "weights": str(PROJECT_ROOT / "refine.pth"),
-    "output": str(PROJECT_ROOT / "outputs" / "run"),
+    "output": str(PROJECT_ROOT / "runs" / "training"),
     "model": "ReFineNet",
     "criterion": "BinaryCrossEntropy",
     "epochs": 300,
@@ -72,7 +72,7 @@ def main() -> None:
     settings = apply_cli_overrides(CONFIG, parse_args())
 
     data_root = Path(settings["data"])
-    output_dir = create_next_run_dir(settings["output"])
+    output_dir = create_next_run_dir(settings["output"], prefix="train")
     weights_path = Path(settings["weights"])
 
     train_images = data_root / "train" / "images"

@@ -110,7 +110,7 @@ ex.py
 
 # Datasets and run outputs (large / regenerated)
 data/
-outputs/
+runs/
 
 # Model weights and checkpoints
 *.pth
@@ -119,7 +119,7 @@ refine.pth
 **/state/
 **/chk_pth/
 
-# Training metric exports under outputs/ (docs/assets keeps example charts)
+# Training metric exports under runs/ (docs/assets keeps example charts)
 results.csv
 results.png
 predictions.png

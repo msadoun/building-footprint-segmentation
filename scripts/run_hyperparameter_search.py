@@ -48,7 +48,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG = {
     "data": str(PROJECT_ROOT / "data" / "steyr_train"),
     "weights": str(PROJECT_ROOT / "refine.pth"),
-    "output": str(PROJECT_ROOT / "outputs" / "hyperparameter"),
+    "output": str(PROJECT_ROOT / "runs" / "hyperparameter"),
     "epochs_per_trial": 20,
     "lrs": [1e-5, 5e-5, 1e-4],
     "batch_sizes": [2, 4, 8],
@@ -317,7 +317,7 @@ def main() -> None:
     settings = apply_cli_overrides(CONFIG, parse_args())
 
     data_root = Path(settings["data"])
-    output_root = create_next_run_dir(settings["output"])
+    output_root = create_next_run_dir(settings["output"], prefix="hyperparameter")
     weights_path = Path(settings["weights"])
     epochs_per_trial = int(settings["epochs_per_trial"])
     metric = settings["metric"]
@@ -456,7 +456,7 @@ def main() -> None:
     print(
         "\nSuggested full training command:\n"
         f"python scripts/run_training.py --data {data_root} --weights {weights_path} "
-        f"--output outputs/steyr_training_best --epochs 300 "
+        f"--output runs/training --epochs 300 "
         f"--batch-size {best_params['batch_size']} --lr {best_params['lr']}"
     )
 

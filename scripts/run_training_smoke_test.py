@@ -31,7 +31,7 @@ PROJECT_ROOT = Path(__file__).resolve().parents[1]
 CONFIG = {
     "data": str(PROJECT_ROOT / "data" / "dummy"),
     "weights": str(PROJECT_ROOT / "refine.pth"),
-    "output": str(PROJECT_ROOT / "outputs" / "run"),
+    "output": str(PROJECT_ROOT / "runs" / "training"),
     "epochs": 1,
     "batch_size": 2,
 }
@@ -52,7 +52,7 @@ def main() -> None:
     settings = apply_cli_overrides(CONFIG, parse_args())
     data_root = Path(settings["data"])
     weights_path = Path(settings["weights"])
-    output_dir = create_next_run_dir(settings["output"])
+    output_dir = create_next_run_dir(settings["output"], prefix="train")
 
     if not (data_root / "train" / "images").exists():
         raise FileNotFoundError(

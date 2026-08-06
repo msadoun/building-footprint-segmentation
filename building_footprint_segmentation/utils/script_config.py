@@ -21,25 +21,27 @@ def apply_cli_overrides(config: dict[str, Any], args: Any) -> dict[str, Any]:
     return settings
 
 
-def create_next_run_dir(base_dir: Path | str) -> Path:
+def create_next_run_dir(base_dir: Path | str, prefix: str) -> Path:
     """
     Create the next numbered run folder under ``base_dir``.
 
-    Naming: ``run``, then ``run2``, ``run3``, ...
-    CONFIG ``output`` should point at the task root
-    (e.g. ``outputs/inference``); each invocation gets its own subfolder.
+    Naming: ``{prefix}1``, ``{prefix}2``, ``{prefix}3``, ...
+
+    Typical layout::
+
+        runs/training/train1
+        runs/inference/inference1
+        runs/hyperparameter/hyperparameter1
+
+    CONFIG ``output`` should point at the task folder
+    (e.g. ``runs/training``).
     """
     base = Path(base_dir)
     base.mkdir(parents=True, exist_ok=True)
 
-    first = base / "run"
-    if not first.exists():
-        first.mkdir(parents=True)
-        return first
-
-    index = 2
+    index = 1
     while True:
-        candidate = base / f"run{index}"
+        candidate = base / f"{prefix}{index}"
         if not candidate.exists():
             candidate.mkdir(parents=True)
             return candidate
